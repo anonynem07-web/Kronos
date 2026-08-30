@@ -1,3 +1,5 @@
+(function () {
+"use strict";
 /* ============================================================================
    storage.js — persistance locale (localStorage) : dossiers + frises
    ========================================================================= */
@@ -86,3 +88,5 @@ function exportAll(db) {
 }
 
 window.TimelineStorage = { loadDB, saveDB, freshDB, newTimeline, uid, exportTimeline, exportAll };
+
+})();
