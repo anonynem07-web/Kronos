@@ -1,93 +1,306 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>Frises — éditeur de frises chronologiques</title>
-<meta name="theme-color" content="#2C4A6E">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kronos — Frises chronologiques</title>
+<meta name="theme-color" content="#1b2430">
+<meta name="description" content="Créez et consultez des frises chronologiques à partir de listes de dates.">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root{
+  --ink:#1b2430; --ink-2:#232f3e; --ink-3:#2c3a4c;
+  --paper:#f2ece0; --paper-2:#e9e1d0; --paper-line:#c9b896;
+  --brass:#8a6d3b; --brass-light:#c9a86a;
+  --teal:#2f6f6b; --teal-light:#4a938d;
+  --coral:#c05a4e;
+  --text-ink:#2a2118; --text-light:#eee8da; --text-dim:#9aa7b5;
+  --danger:#b0463c;
+  --radius:10px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:var(--ui); background:var(--ink); color:var(--text-light);
+  overflow:hidden; -webkit-tap-highlight-color:transparent;
+}
+button{font-family:inherit; cursor:pointer}
+input, textarea, select, button{font-family:inherit; color:inherit}
+::selection{background:var(--brass-light); color:var(--ink)}
+
+#app{display:flex; flex-direction:column; height:100vh; height:100dvh}
+
+/* ---------- TOP BAR ---------- */
+#topbar{
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  background:var(--ink-2); border-bottom:1px solid #101820; flex:0 0 auto;
+  min-height:46px;
+}
+.btn{
+  background:var(--ink-3); border:1px solid #3a4a5e; color:var(--text-light);
+  border-radius:8px; padding:7px 11px; font-size:13.5px; white-space:nowrap;
+  display:inline-flex; align-items:center; gap:6px;
+}
+.btn:hover{background:#334153}
+.btn:focus-visible, a:focus-visible, [tabindex]:focus-visible{outline:2px solid var(--brass-light); outline-offset:1px}
+.btn.primary{background:var(--brass); border-color:var(--brass)}
+.btn.primary:hover{background:#9d7c46}
+.btn.ghost{background:transparent; border-color:transparent}
+.btn.ghost:hover{background:var(--ink-3)}
+.btn.active{background:var(--teal); border-color:var(--teal)}
+.btn.icon{padding:7px 9px}
+#frisesBtn{font-weight:600; letter-spacing:.02em}
+#timelineTitle{
+  background:transparent; border:1px solid transparent; color:var(--text-light);
+  font-size:14.5px; font-weight:600; padding:6px 8px; border-radius:6px; min-width:0; flex:1 1 auto;
+  max-width:340px; text-overflow:ellipsis;
+}
+#timelineTitle:hover, #timelineTitle:focus{background:var(--ink-3); border-color:#3a4a5e}
+.spacer{flex:1 1 auto}
+.topbar-right{display:flex; gap:6px; align-items:center; flex:0 0 auto}
+.hide-narrow{display:inline-flex}
+@media (max-width:760px){ .hide-narrow{display:none} }
+
+/* ---------- PANEL (dépliant) ---------- */
+#panel{
+  flex:0 0 auto; background:var(--ink-2); border-bottom:1px solid #101820;
+  max-height:0; overflow:hidden; transition:max-height .22s ease;
+}
+#panel.open{max-height:70vh; overflow-y:auto}
+.panel-inner{display:flex; flex-wrap:wrap; gap:0; padding:4px 0}
+.panel-col{flex:1 1 260px; padding:14px 18px; border-right:1px solid #101820; min-width:240px}
+.panel-col:last-child{border-right:none}
+.panel-col h3{margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); font-weight:700}
+.folder{margin-bottom:6px}
+.folder-head{display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:6px; cursor:pointer}
+.folder-head:hover{background:var(--ink-3)}
+.folder-head .name{flex:1; font-weight:600; font-size:13.5px}
+.folder-timelines{padding-left:20px; display:flex; flex-direction:column; gap:1px}
+.tl-item{display:flex; align-items:center; gap:6px; padding:5px 7px; border-radius:6px; font-size:13px; cursor:pointer; color:var(--text-dim)}
+.tl-item:hover{background:var(--ink-3); color:var(--text-light)}
+.tl-item.active{background:var(--teal); color:#fff}
+.tl-item .x{opacity:.5; padding:2px 4px; border-radius:4px}
+.tl-item .x:hover{opacity:1; background:rgba(0,0,0,.25)}
+.row{display:flex; align-items:center; gap:8px; margin:7px 0; font-size:13.5px}
+.row label{flex:1; cursor:pointer}
+.row input[type=text], .row input[type=number], .row select{
+  background:var(--ink); border:1px solid #3a4a5e; color:var(--text-light);
+  border-radius:6px; padding:5px 7px; font-size:13px; width:110px;
+}
+.row.checkbox{gap:9px}
+.row.checkbox input{width:16px; height:16px; accent-color:var(--teal)}
+.cat-list{display:flex; flex-direction:column; gap:6px; margin-top:8px}
+.cat-row{display:flex; align-items:center; gap:8px; font-size:13px}
+.cat-swatch{width:16px; height:16px; border-radius:4px; border:1px solid rgba(255,255,255,.25); flex:0 0 auto; cursor:pointer}
+.cat-row input[type=color]{width:26px; height:22px; padding:0; border:none; background:none; cursor:pointer}
+.mini{font-size:11.5px; color:var(--text-dim); margin-top:4px}
+.panel-col textarea.hidden-file{display:none}
+
+/* ---------- MAIN ---------- */
+#main{flex:1 1 auto; display:flex; min-height:0}
+#editorPane{
+  flex:0 0 40%; max-width:640px; min-width:280px; display:flex; flex-direction:column;
+  background:var(--ink); border-right:1px solid #101820; min-height:0;
+}
+#catFilterBar{display:flex; gap:5px; flex-wrap:wrap; padding:7px 10px; background:var(--ink-2); border-bottom:1px solid #101820}
+.chip{
+  font-size:11.5px; padding:3px 9px; border-radius:999px; border:1px solid #3a4a5e; color:var(--text-dim);
+  background:transparent; cursor:pointer;
+}
+.chip.active{background:var(--brass); border-color:var(--brass); color:#fff}
+#editorWrap{position:relative; flex:1 1 auto; min-height:0}
+#editor{
+  width:100%; height:100%; resize:none; border:none; background:var(--ink);
+  color:var(--text-light); font-family:var(--mono); font-size:13.5px; line-height:1.7;
+  padding:14px; outline:none; tab-size:4;
+}
+#editorFoot{padding:6px 12px; background:var(--ink-2); border-top:1px solid #101820; font-size:11.5px; color:var(--text-dim); display:flex; justify-content:space-between}
+
+#viewPane{flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; background:var(--paper); color:var(--text-ink)}
+#timelineContainer{flex:1 1 auto; min-height:0; overflow:auto; position:relative}
+#timelineContainer.vertical{overflow-y:auto; overflow-x:hidden}
+#timelineContainer.horizontal{overflow-x:auto; overflow-y:hidden; touch-action:pan-x pan-y}
+
+.empty-state{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#8a7d63; gap:8px; text-align:center; padding:30px}
+.empty-state h2{font-family:var(--serif); font-weight:600; margin:0; color:var(--text-ink)}
+
+/* mobile tab bar (masqué en desktop) */
+#mobileTabs{display:none; flex:0 0 auto; background:var(--ink-2); border-top:1px solid #101820}
+#mobileTabs .btn{flex:1; border-radius:0; justify-content:center; border:none; background:transparent}
+#mobileTabs .btn.active{background:var(--ink-3); box-shadow:inset 0 2px 0 var(--brass-light)}
+
+@media (max-width:900px){
+  #main{flex-direction:column}
+  #editorPane{flex:1 1 auto; max-width:none; border-right:none; border-bottom:1px solid #101820; display:none}
+  #viewPane{flex:1 1 auto; display:none}
+  #app.tab-edit #editorPane{display:flex}
+  #app.tab-view #viewPane{display:flex}
+  #mobileTabs{display:flex}
+  #timelineTitle{max-width:150px}
+}
+
+/* fullscreen */
+#app.fullscreen #topbar, #app.fullscreen #panel, #app.fullscreen #editorPane, #app.fullscreen #catFilterBar, #app.fullscreen #mobileTabs{display:none !important}
+#app.fullscreen #main{height:100%}
+#app.fullscreen #viewPane{flex:1 1 100%}
+#fsExitBtn{display:none; position:fixed; top:10px; right:10px; z-index:50; background:rgba(27,36,48,.85); color:#fff; border:none}
+#app.fullscreen #fsExitBtn{display:inline-flex}
+
+/* ---------- TIMELINE — HORIZONTAL (SVG) ---------- */
+svg.frise{display:block}
+.axis-line{stroke:var(--ink); stroke-width:3}
+.tick{stroke:var(--paper-line); stroke-width:1.5}
+.tick-label{font-family:var(--mono); font-size:11px; fill:#7a6d54}
+.connector{stroke-width:1.4; fill:none}
+.connector.dashed{stroke-dasharray:3,3}
+.event-dot{stroke:var(--paper); stroke-width:1.5}
+.event-date{font-family:var(--mono); font-weight:700; font-size:12px}
+.event-annotation{font-family:var(--ui); font-style:italic; font-size:11px; fill:#6b6152}
+.event-desc{font-family:var(--ui); font-size:12.5px; color:var(--text-ink); line-height:1.35}
+.event-desc b{font-weight:700}
+.event-desc i{font-style:italic}
+.period-bar{stroke-width:4; fill:none}
+.legend-swatch{stroke:rgba(0,0,0,.2)}
+
+/* ---------- TIMELINE — VERTICAL ---------- */
+.v-timeline{position:relative; max-width:900px; margin:0 auto; padding:26px 10px 60px}
+.v-axis{position:absolute; left:50%; top:0; bottom:0; width:2px; background:var(--paper-line); transform:translateX(-1px)}
+.v-item{position:relative; display:flex; margin-bottom:16px; align-items:flex-start}
+.v-item .v-side{width:calc(50% - 14px)}
+.v-item .v-gap{width:28px; flex:0 0 28px; display:flex; justify-content:center; position:relative}
+.v-item .v-gap::before{content:""; position:absolute; top:9px; width:100%; height:1.5px; background:var(--paper-line)}
+.v-item .v-dot{position:absolute; top:2px; width:10px; height:10px; border-radius:50%; border:2px solid var(--paper); z-index:2}
+.v-item.point .v-side.dates{text-align:right}
+.v-item.point .v-side.periods{visibility:hidden}
+.v-item.period .v-side.periods{text-align:left}
+.v-item.period .v-side.dates{visibility:hidden}
+.v-date{font-family:var(--mono); font-weight:700; font-size:13px}
+.v-annotation{font-style:italic; font-size:11.5px; color:#6b6152; margin-top:1px}
+.v-desc{font-size:13px; margin-top:3px; line-height:1.4}
+.v-desc.multi div{padding:2px 0}
+.v-desc.multi div + div{border-top:1px dashed var(--paper-line); padding-top:4px; margin-top:2px}
+
+@media (max-width:520px){
+  .v-timeline{padding:20px 4px 60px}
+  .v-axis{left:74px; transform:none}
+  .v-item{align-items:flex-start}
+  .v-item .v-side.dates{width:70px; flex:0 0 70px; text-align:right !important; padding-right:6px}
+  .v-item .v-side.periods{width:auto; flex:1 1 auto; text-align:left !important; padding-left:20px}
+  .v-item .v-gap{width:0; flex:0 0 0}
+  .v-item .v-gap::before{display:none}
+  .v-item .v-dot{left:70px; margin-left:-5px}
+  .v-item.point .v-side.periods, .v-item.period .v-side.dates{visibility:visible}
+}
+
+/* ---------- IMPRESSION ---------- */
+@media print{
+  #topbar, #panel, #editorPane, #catFilterBar, #mobileTabs, #fsExitBtn, #editorFoot{display:none !important}
+  html, body{overflow:visible !important; background:#fff}
+  #app, #main, #viewPane, #timelineContainer{display:block !important; height:auto !important; overflow:visible !important; background:#fff !important}
+  .print-page{page-break-after:always; overflow:hidden; position:relative}
+  .print-page:last-child{page-break-after:auto}
+  @page{ margin:10mm }
+}
+
+/* ---------- DIVERS ---------- */
+.toast{
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+  background:var(--ink-3); color:var(--text-light); padding:9px 16px; border-radius:8px;
+  font-size:13px; box-shadow:0 4px 18px rgba(0,0,0,.35); z-index:100; opacity:0; pointer-events:none;
+  transition:opacity .2s;
+}
+.toast.show{opacity:1}
+.sr-only{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0)}
+</style>
 </head>
 <body>
+<div id="app" class="tab-view">
 
-<header class="app-header">
-  <button class="app-title-btn" id="btnMenuToggle"><span class="accent-dot">◆</span> Frises</button>
-  <span id="timelineNameLabel"></span>
-
-  <div class="header-menu-panel" id="headerMenu">
-    <h4>Dossiers &amp; frises</h4>
-    <div class="menu-row">
-      <button id="btnNewTimeline" class="primary small">+ Nouvelle frise</button>
-      <button id="btnNewFolder" class="small">+ Dossier</button>
+  <header id="topbar">
+    <button class="btn" id="frisesBtn">✦ Frises</button>
+    <input id="timelineTitle" type="text" value="Nouvelle frise" aria-label="Nom de la frise">
+    <div class="spacer"></div>
+    <div class="topbar-right">
+      <button class="btn icon hide-narrow" id="btnOrientation" title="Basculer horizontal / vertical">↔</button>
+      <button class="btn icon" id="btnFullscreen" title="Plein écran">⛶</button>
+      <button class="btn icon hide-narrow" id="btnPrint" title="Imprimer / PDF">🖶</button>
     </div>
-    <div id="folderList"></div>
+  </header>
 
-    <h4>Vue</h4>
-    <div class="menu-row">
-      <button class="tabbtn active" id="tabHorizontal">↔ Horizontale</button>
-      <button class="tabbtn" id="tabVertical">↕ Verticale</button>
-    </div>
-    <div class="menu-row">
-      <button id="btnFullscreen" class="small">⛶ Plein écran</button>
-      <button id="btnPrint" class="small">🖶 Imprimer / PDF (A4)</button>
-    </div>
+  <div id="panel">
+    <div class="panel-inner">
+      <div class="panel-col" id="colFolders">
+        <h3>Dossiers &amp; frises</h3>
+        <div id="folderList"></div>
+        <button class="btn" id="btnNewFolder" style="margin-top:8px; width:100%; justify-content:center">+ Nouveau dossier</button>
+        <button class="btn primary" id="btnNewTimeline" style="margin-top:6px; width:100%; justify-content:center">+ Nouvelle frise</button>
+      </div>
 
-    <h4>Export / import</h4>
-    <div class="menu-row">
-      <button id="btnExportOne" class="small">Exporter cette frise</button>
-      <button id="btnExportAll" class="small">Exporter tout</button>
-      <button id="btnImport" class="small" onclick="document.getElementById('importFile').click()">Importer…</button>
-      <input type="file" id="importFile" accept="application/json" style="display:none">
+      <div class="panel-col" id="colView">
+        <h3>Affichage</h3>
+        <div class="row"><label for="selOrientation">Orientation</label>
+          <select id="selOrientation"><option value="horizontal">Horizontale</option><option value="vertical">Verticale</option></select>
+        </div>
+        <div class="row"><label for="selScale">Échelle</label>
+          <select id="selScale"><option value="auto">Automatique</option><option value="compact">Compacte</option><option value="large">Large</option></select>
+        </div>
+        <div class="row"><label for="selGrad">Graduations</label>
+          <select id="selGrad"><option value="auto">Automatiques</option><option value="fine">Fines</option><option value="coarse">Larges</option><option value="off">Aucune</option></select>
+        </div>
+        <div class="row checkbox"><input type="checkbox" id="chkLegend" checked><label for="chkLegend">Afficher la légende</label></div>
+        <h3 style="margin-top:16px">Format des dates</h3>
+        <div class="row checkbox"><input type="checkbox" id="chkAllBC"><label for="chkAllBC">Tout convertir en av. J.-C.</label></div>
+        <div class="row checkbox"><input type="checkbox" id="chkHideBC"><label for="chkHideBC">Ne pas afficher « av. J.-C. »</label></div>
+        <div class="row checkbox"><input type="checkbox" id="chkAbbr"><label for="chkAbbr">Abréger (av. J.-C. → −, vers → ~, années 1250 → 1250s)</label></div>
+        <div class="row checkbox"><input type="checkbox" id="chkSplitSub"><label for="chkSplitSub">Scinder les événements séparés par \, | ou —</label></div>
+        <div id="allBCHint" class="mini" style="display:none">Toutes les dates de cette frise sont postérieures à J.-C. : cette option permet de les considérer comme av. J.-C.</div>
+      </div>
+
+      <div class="panel-col" id="colCats">
+        <h3>Catégories (#tags)</h3>
+        <div class="cat-list" id="catColorList"></div>
+        <div class="mini" id="catEmptyHint">Aucune catégorie détectée pour l'instant — ajoutez #NomDeCatégorie à la fin d'une ligne.</div>
+      </div>
+
+      <div class="panel-col" id="colData">
+        <h3>Données</h3>
+        <div class="row"><button class="btn" id="btnExportOne" style="width:100%; justify-content:center">Exporter cette frise (JSON)</button></div>
+        <div class="row"><button class="btn" id="btnExportAll" style="width:100%; justify-content:center">Exporter tout (JSON)</button></div>
+        <div class="row"><button class="btn" id="btnImport" style="width:100%; justify-content:center">Importer un JSON</button></div>
+        <input type="file" id="fileImport" accept="application/json" style="display:none">
+        <div class="row" style="margin-top:14px"><button class="btn" id="btnDupTimeline" style="width:100%; justify-content:center">Dupliquer la frise</button></div>
+        <div class="row"><button class="btn" id="btnDeleteTimeline" style="width:100%; justify-content:center; color:#ffb3ab">Supprimer la frise</button></div>
+      </div>
     </div>
   </div>
-</header>
 
-<div class="app-body">
-  <div class="main-panes">
-    <section class="editor-pane">
-      <div class="editor-toolbar">
-        <button id="btnBold" title="Gras (Ctrl+B)"><b>G</b></button>
-        <button id="btnItalic" title="Italique (Ctrl+I)"><i>I</i></button>
-        <button id="btnUnderline" title="Souligné (Ctrl+U)"><u>S</u></button>
-        <button id="btnApprox" title="Insérer ~ (approximatif) — Maj+Alt+K">~</button>
-        <span class="divider"></span>
-        <label style="font-size:0.8rem;color:var(--muted);display:flex;align-items:center;gap:5px;">
-          Afficher : <select id="categoryFilter"><option value="">Toutes les catégories</option></select>
-        </label>
-      </div>
-      <textarea id="editor" spellcheck="false" placeholder="12/05/1820 : Naissance de ... #Politique
-années 1250 : Début de ...
-entre 1253 et 1257 : Construction de ...
--479/-478 : Bataille incertaine
-IVe s. av. J.-C. : Période classique tardive #Culture"></textarea>
-      <div class="options-panel" id="optionsPanel">
-        <label class="row-full" id="optAllBCWrap"><input type="checkbox" id="optAllBC"> Toutes les dates en av. J.-C.</label>
-        <label><input type="checkbox" id="optHideBC"> Masquer « av. J.-C. »</label>
-        <label><input type="checkbox" id="optAbbreviate"> Abréger (av. J.-C. → « - », vers → « ~ », années 1250 → 1250s)</label>
-        <label class="row-full"><input type="checkbox" id="optSplitMulti"> Séparer les libellés (| ou —) en événements distincts</label>
-        <label>Taille du texte <input type="number" id="optFontSize" min="9" max="24"></label>
-        <label>Écart entre voies (px) <input type="number" id="optLaneGap" min="30" max="140"></label>
-        <label>Largeur max. libellé (px) <input type="number" id="optMaxLabelWidth" min="60" max="400"></label>
-        <label>Graduation (pas, vide = auto) <input type="number" id="optGraduation" min="1"></label>
-      </div>
-      <div class="warnings-box" id="warningsBox" style="display:none;"></div>
+  <main id="main">
+    <section id="editorPane">
+      <div id="catFilterBar"></div>
+      <div id="editorWrap"><textarea id="editor" placeholder="14/07/1789 : Prise de la Bastille #Politique
+vers 1200 : fondation de la ville
+557 - 530 : Cyrus le Grand, roi des Perses | Pisistrate tyran (561)"></textarea></div>
+      <div id="editorFoot"><span id="lineCount">0 ligne</span><span id="parseWarnings"></span></div>
     </section>
+    <section id="viewPane">
+      <div id="timelineContainer" class="horizontal"></div>
+    </section>
+  </main>
 
-    <section class="view-pane" id="viewPane">
-      <div class="legend-bar" id="legendBar"></div>
-      <div class="canvas-scroll">
-        <div id="canvas"></div>
-      </div>
-      <div id="printCanvas" class="print-only"></div>
-    </section>
-  </div>
+  <nav id="mobileTabs">
+    <button class="btn active" id="tabEdit">✎ Éditer</button>
+    <button class="btn" id="tabView">📈 Frise</button>
+  </nav>
+
+  <button id="fsExitBtn" class="btn icon">✕ Quitter le plein écran</button>
+  <div class="toast" id="toast"></div>
 </div>
 
-<script src="storage.js"></script>
-<script src="parser.js"></script>
-<script src="render.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
