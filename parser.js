@@ -1,3 +1,5 @@
+(function () {
+"use strict";
 /* ============================================================================
    parser.js — moteur de reconnaissance des dates et des étiquettes
    ============================================================================
@@ -626,3 +628,5 @@ window.TimelineParser = {
   romanToInt, intToRoman, centuryRange, colorForCategory, PALETTE,
   parseLabelSegments, extractCategory, extractAnnotation, formatDateDisplay
 };
+
+})();
