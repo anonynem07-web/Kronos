@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Frises — éditeur de frises chronologiques</title>
+<meta name="theme-color" content="#2C4A6E">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <button class="app-title-btn" id="btnMenuToggle"><span class="accent-dot">◆</span> Frises</button>
+  <span id="timelineNameLabel"></span>
+
+  <div class="header-menu-panel" id="headerMenu">
+    <h4>Dossiers &amp; frises</h4>
+    <div class="menu-row">
+      <button id="btnNewTimeline" class="primary small">+ Nouvelle frise</button>
+      <button id="btnNewFolder" class="small">+ Dossier</button>
+    </div>
+    <div id="folderList"></div>
+
+    <h4>Vue</h4>
+    <div class="menu-row">
+      <button class="tabbtn active" id="tabHorizontal">↔ Horizontale</button>
+      <button class="tabbtn" id="tabVertical">↕ Verticale</button>
+    </div>
+    <div class="menu-row">
+      <button id="btnFullscreen" class="small">⛶ Plein écran</button>
+      <button id="btnPrint" class="small">🖶 Imprimer / PDF (A4)</button>
+    </div>
+
+    <h4>Export / import</h4>
+    <div class="menu-row">
+      <button id="btnExportOne" class="small">Exporter cette frise</button>
+      <button id="btnExportAll" class="small">Exporter tout</button>
+      <button id="btnImport" class="small" onclick="document.getElementById('importFile').click()">Importer…</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none">
+    </div>
+  </div>
+</header>
+
+<div class="app-body">
+  <div class="main-panes">
+    <section class="editor-pane">
+      <div class="editor-toolbar">
+        <button id="btnBold" title="Gras (Ctrl+B)"><b>G</b></button>
+        <button id="btnItalic" title="Italique (Ctrl+I)"><i>I</i></button>
+        <button id="btnUnderline" title="Souligné (Ctrl+U)"><u>S</u></button>
+        <button id="btnApprox" title="Insérer ~ (approximatif) — Maj+Alt+K">~</button>
+        <span class="divider"></span>
+        <label style="font-size:0.8rem;color:var(--muted);display:flex;align-items:center;gap:5px;">
+          Afficher : <select id="categoryFilter"><option value="">Toutes les catégories</option></select>
+        </label>
+      </div>
+      <textarea id="editor" spellcheck="false" placeholder="12/05/1820 : Naissance de ... #Politique
+années 1250 : Début de ...
+entre 1253 et 1257 : Construction de ...
+-479/-478 : Bataille incertaine
+IVe s. av. J.-C. : Période classique tardive #Culture"></textarea>
+      <div class="options-panel" id="optionsPanel">
+        <label class="row-full" id="optAllBCWrap"><input type="checkbox" id="optAllBC"> Toutes les dates en av. J.-C.</label>
+        <label><input type="checkbox" id="optHideBC"> Masquer « av. J.-C. »</label>
+        <label><input type="checkbox" id="optAbbreviate"> Abréger (av. J.-C. → « - », vers → « ~ », années 1250 → 1250s)</label>
+        <label class="row-full"><input type="checkbox" id="optSplitMulti"> Séparer les libellés (| ou —) en événements distincts</label>
+        <label>Taille du texte <input type="number" id="optFontSize" min="9" max="24"></label>
+        <label>Écart entre voies (px) <input type="number" id="optLaneGap" min="30" max="140"></label>
+        <label>Largeur max. libellé (px) <input type="number" id="optMaxLabelWidth" min="60" max="400"></label>
+        <label>Graduation (pas, vide = auto) <input type="number" id="optGraduation" min="1"></label>
+      </div>
+      <div class="warnings-box" id="warningsBox" style="display:none;"></div>
+    </section>
+
+    <section class="view-pane" id="viewPane">
+      <div class="legend-bar" id="legendBar"></div>
+      <div class="canvas-scroll">
+        <div id="canvas"></div>
+      </div>
+      <div id="printCanvas" class="print-only"></div>
+    </section>
+  </div>
+</div>
+
+<script src="storage.js"></script>
+<script src="parser.js"></script>
+<script src="render.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
