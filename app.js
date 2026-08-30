@@ -1,6 +1,19 @@
+(function () {
+"use strict";
 /* ============================================================================
    app.js — orchestration de l'interface
    ========================================================================= */
+
+// garde-fou : si ce script venait à être exécuté une deuxième fois dans la
+// même page (rechargement partiel, service worker, outil de live-reload...),
+// on n'initialise l'application qu'une seule fois pour éviter les écouteurs
+// d'événements et les instances de base de données dupliqués.
+if (window.__frisesAppBooted) {
+  console.warn("app.js exécuté plusieurs fois : initialisation ignorée la 2e fois.");
+  return;
+}
+window.__frisesAppBooted = true;
+
 
 const { loadDB, saveDB, newTimeline, uid, exportTimeline, exportAll } = window.TimelineStorage;
 const { parseTimelineText, sortRawText, canonicalizeAndSort, colorForCategory } = window.TimelineParser;
@@ -401,3 +414,5 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+})();
