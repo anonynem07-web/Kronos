@@ -1,93 +1,316 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>Kronos — rappelons que c'est un méchant</title>
-<meta name="theme-color" content="#2C4A6E">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Kronos — Éditeur de Frises</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: #090d16;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+    }
+    button, select, input {
+      background: var(--panel-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    .btn-kronos {
+      background: linear-gradient(135deg, #0284c7, #4f46e5);
+      border: none;
+      font-weight: bold;
+    }
+    #top-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: var(--panel-bg);
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    #top-bar.active { display: flex; }
+    main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    #editor-pane {
+      width: 380px;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      gap: 8px;
+    }
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 11px;
+    }
+    .options-grid label { display: flex; align-items: center; gap: 4px; }
+    textarea {
+      flex: 1;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      resize: none;
+      border-radius: 4px;
+    }
+    #preview-pane {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+      background: #020617;
+      padding: 40px;
+    }
+    .timeline-svg { display: block; width: 100%; height: 100%; }
+
+    /* Vue Mobile Verticale */
+    @media (max-width: 768px) {
+      main { flex-direction: column; }
+      #editor-pane { width: 100%; height: 40%; }
+      #preview-pane { width: 100%; height: 60%; padding: 10px; }
+      .v-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        position: relative;
+        padding-left: 20px;
+      }
+      .v-timeline::before {
+        content: '';
+        position: absolute;
+        left: 8px; top: 0; bottom: 0;
+        width: 2px; background: var(--accent);
+      }
+      .v-event {
+        position: relative;
+        background: var(--panel-bg);
+        padding: 8px 12px;
+        border-radius: 6px;
+        border-left: 4px solid var(--accent);
+      }
+      .v-event .v-date { font-weight: bold; font-size: 12px; }
+      .v-event .v-desc { font-size: 13px; margin-top: 4px; }
+    }
+
+    /* Impression A4 Horizontale */
+    @media print {
+      body { background: #fff; color: #000; }
+      header, #top-bar, #editor-pane { display: none !important; }
+      #preview-pane { overflow: visible; padding: 0; background: #fff; }
+      @page { size: A4 landscape; margin: 1cm; }
+    }
+  </style>
 </head>
 <body>
 
-<header class="app-header">
-  <button class="app-title-btn" id="btnMenuToggle"><span class="accent-dot">◆</span> Frises</button>
-  <span id="timelineNameLabel"></span>
+  <header>
+    <button class="btn-kronos" onclick="toggleMenu()">✦Frises</button>
+    <span style="font-weight:bold; font-size: 15px;">Kronos</span>
+  </header>
 
-  <div class="header-menu-panel" id="headerMenu">
-    <h4>Dossiers &amp; frises</h4>
-    <div class="menu-row">
-      <button id="btnNewTimeline" class="primary small">+ Nouvelle frise</button>
-      <button id="btnNewFolder" class="small">+ Dossier</button>
-    </div>
-    <div id="folderList"></div>
-
-    <h4>Vue</h4>
-    <div class="menu-row">
-      <button class="tabbtn active" id="tabHorizontal">↔ Horizontale</button>
-      <button class="tabbtn" id="tabVertical">↕ Verticale</button>
-    </div>
-    <div class="menu-row">
-      <button id="btnFullscreen" class="small">⛶ Plein écran</button>
-      <button id="btnPrint" class="small">🖶 Imprimer / PDF (A4)</button>
-    </div>
-
-    <h4>Export / import</h4>
-    <div class="menu-row">
-      <button id="btnExportOne" class="small">Exporter cette frise</button>
-      <button id="btnExportAll" class="small">Exporter tout</button>
-      <button id="btnImport" class="small" onclick="document.getElementById('importFile').click()">Importer…</button>
-      <input type="file" id="importFile" accept="application/json" style="display:none">
-    </div>
+  <div id="top-bar">
+    <select id="folder-select" onchange="switchTimeline()"></select>
+    <button onclick="newTimeline()">+ Nouvelle Frise</button>
+    <button onclick="exportJSON()">Exporter (JSON)</button>
+    <button onclick="document.getElementById('file-import').click()">Importer</button>
+    <input type="file" id="file-import" style="display:none" onchange="importJSON(event)">
+    <button onclick="toggleFullscreen()">Plein écran</button>
+    <button onclick="window.print()">Imprimer (A4)</button>
   </div>
-</header>
 
-<div class="app-body">
-  <div class="main-panes">
-    <section class="editor-pane">
-      <div class="editor-toolbar">
-        <button id="btnBold" title="Gras (Ctrl+B)"><b>G</b></button>
-        <button id="btnItalic" title="Italique (Ctrl+I)"><i>I</i></button>
-        <button id="btnUnderline" title="Souligné (Ctrl+U)"><u>S</u></button>
-        <button id="btnApprox" title="Insérer ~ (approximatif) — Maj+Alt+K">~</button>
-        <span class="divider"></span>
-        <label style="font-size:0.8rem;color:var(--muted);display:flex;align-items:center;gap:5px;">
-          Afficher : <select id="categoryFilter"><option value="">Toutes les catégories</option></select>
-        </label>
+  <main>
+    <section id="editor-pane">
+      <div class="options-grid">
+        <label><input type="checkbox" id="opt-all-bc" onchange="render()"> Tout en av. J.-C.</label>
+        <label><input type="checkbox" id="opt-hide-bc" onchange="render()"> Masquer "av. J.-C."</label>
+        <label><input type="checkbox" id="opt-abbrev" onchange="render()"> Abréger</label>
+        <label><input type="checkbox" id="opt-split" onchange="render()"> Scinder (\, |, —)</label>
       </div>
-      <textarea id="editor" spellcheck="false" placeholder="12/05/1820 : Naissance de ... #Politique
-années 1250 : Début de ...
-entre 1253 et 1257 : Construction de ...
--479/-478 : Bataille incertaine
-IVe s. av. J.-C. : Période classique tardive #Culture"></textarea>
-      <div class="options-panel" id="optionsPanel">
-        <label class="row-full" id="optAllBCWrap"><input type="checkbox" id="optAllBC"> Toutes les dates en av. J.-C.</label>
-        <label><input type="checkbox" id="optHideBC"> Masquer « av. J.-C. »</label>
-        <label><input type="checkbox" id="optAbbreviate"> Abréger (av. J.-C. → « - », vers → « ~ », années 1250 → 1250s)</label>
-        <label class="row-full"><input type="checkbox" id="optSplitMulti"> Séparer les libellés (| ou —) en événements distincts</label>
-        <label>Taille du texte <input type="number" id="optFontSize" min="9" max="24"></label>
-        <label>Écart entre voies (px) <input type="number" id="optLaneGap" min="30" max="140"></label>
-        <label>Largeur max. libellé (px) <input type="number" id="optMaxLabelWidth" min="60" max="400"></label>
-        <label>Graduation (pas, vide = auto) <input type="number" id="optGraduation" min="1"></label>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <span style="font-size:11px;">Filtre Tag :</span>
+        <input type="text" id="cat-filter" placeholder="#catégorie" style="flex:1" oninput="render()">
       </div>
-      <div class="warnings-box" id="warningsBox" style="display:none;"></div>
+      <textarea id="raw-input" placeholder="Ex: 557 - 530 : Cyrus le Grand #perse" onblur="onTextareaBlur()"></textarea>
     </section>
 
-    <section class="view-pane" id="viewPane">
-      <div class="legend-bar" id="legendBar"></div>
-      <div class="canvas-scroll">
-        <div id="canvas"></div>
-      </div>
-      <div id="printCanvas" class="print-only"></div>
+    <section id="preview-pane">
+      <div id="timeline-container"></div>
     </section>
-  </div>
-</div>
+  </main>
 
-<script src="storage.js"></script>
-<script src="parser.js"></script>
-<script src="render.js"></script>
-<script src="app.js"></script>
+  <script>
+    // Enregistrement du PWA SW
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+
+    let timelines = JSON.parse(localStorage.getItem('kronos_data') || '{"Défaut": {"Frise 1": ""}}');
+    let currentFolder = "Défaut";
+    let currentTitle = "Frise 1";
+
+    const monthMap = { "janvier":"janv.","février":"fév.","mars":"mars","avril":"avr.","mai":"mai","juin":"juin","juillet":"juil.","août":"août","septembre":"sept.","octobre":"oct.","novembre":"nov.","décembre":"déc." };
+    const romanMap = { "I":1,"II":2,"III":3,"IV":4,"V":5,"VI":6,"VII":7,"VIII":8,"IX":9,"X":10,"XI":11,"XII":12,"XIII":13,"XIV":14,"XV":15,"XVI":16,"XVII":17,"XVIII":18,"XIX":19,"XX":20,"XXI":21 };
+
+    function toggleMenu() {
+      document.getElementById('top-bar').classList.toggle('active');
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+
+    // Gestion du Markdown Raccourcis (Ctrl+B, I, U)
+    document.getElementById('raw-input').addEventListener('keydown', (e) => {
+      if (!e.ctrlKey) return;
+      const ta = e.target;
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const sel = ta.value.substring(start, end);
+      let tag = '';
+      if (e.key === 'b') tag = '**';
+      if (e.key === 'i') tag = '_';
+      if (e.key === 'u') tag = '<u>';
+      if (tag) {
+        e.preventDefault();
+        const closeTag = tag === '<u>' ? '</u>' : tag;
+        ta.value = ta.value.substring(0, start) + tag + sel + closeTag + ta.value.substring(end);
+      }
+    });
+
+    function parseDateStr(rawDate) {
+      let isBC = false;
+      let text = rawDate.trim();
+      if (text.includes('av. J.-C.') || text.startsWith('-')) {
+        isBC = true;
+        text = text.replace('av. J.-C.', '').replace('-', '').trim();
+      }
+
+      let year = null;
+      let matchRoman = text.match(/(IX|IV|V?X{0,3}I{0,3})/i);
+      if (text.includes('siècle') || text.includes('s.') || matchRoman) {
+        let romVal = romanMap[matchRoman[0].toUpperCase()] || 1;
+        year = (romVal - 1) * 100 + 50;
+        if (text.includes('deuxième moitié') || text.includes('2e moitié')) year = (romVal - 1) * 100 + 60;
+      } else {
+        let numMatch = text.match(/\d{3,4}/);
+        if (numMatch) year = parseInt(numMatch[0]);
+      }
+
+      if (year !== null && isBC) year = -year;
+      return year || 0;
+    }
+
+    function parseLine(line) {
+      let parts = line.split(/[:—\t]/);
+      let datePart = parts[0] || '';
+      let descPart = parts.slice(1).join(':') || '';
+
+      let catMatch = line.match(/#([\w-]+)/);
+      let color = catMatch ? '#38bdf8' : '#e2e8f0';
+
+      let numDate = parseDateStr(datePart);
+      return { rawDate: datePart.trim(), desc: descPart.trim(), year: numDate, color };
+    }
+
+    function onTextareaBlur() {
+      let ta = document.getElementById('raw-input');
+      let lines = ta.value.split('\n').filter(l => l.trim() !== '');
+      let parsed = lines.map(parseLine);
+      parsed.sort((a, b) => a.year - b.year);
+      ta.value = parsed.map(p => `${p.rawDate} : ${p.desc}`).join('\n');
+      render();
+    }
+
+    function render() {
+      const container = document.getElementById('timeline-container');
+      const val = document.getElementById('raw-input').value;
+      const lines = val.split('\n').filter(l => l.trim() !== '');
+      const events = lines.map(parseLine);
+
+      if (window.innerWidth <= 768) {
+        // Mode Mobile Vertical sans échelle
+        let html = '<div class="v-timeline">';
+        events.forEach(e => {
+          html += `<div class="v-event" style="border-left-color: ${e.color}">
+            <div class="v-date">${e.rawDate}</div>
+            <div class="v-desc">${e.desc}</div>
+          </div>`;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+      } else {
+        // Mode Horizontale SVG à l'échelle
+        let svg = `<svg class="timeline-svg" viewBox="0 0 1000 400">
+          <line x1="50" y1="200" x2="950" y2="200" stroke="#475569" stroke-width="4"/>`;
+        events.forEach((e, i) => {
+          let x = 100 + (i * (800 / Math.max(events.length - 1, 1)));
+          let yText = i % 2 === 0 ? 120 : 280;
+          svg += `<circle cx="${x}" cy="200" r="6" fill="${e.color}"/>
+                  <line x1="${x}" y1="200" x2="${x}" y2="${yText}" stroke="${e.color}" stroke-dasharray="4"/>
+                  <text x="${x}" y="${yText}" fill="#fff" font-size="12" text-anchor="middle">${e.rawDate} : ${e.desc}</text>`;
+        });
+        svg += `</svg>`;
+        container.innerHTML = svg;
+      }
+    }
+
+    function exportJSON() {
+      let blob = new Blob([JSON.stringify(timelines)], {type: 'application/json'});
+      let a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'kronos_backup.json';
+      a.click();
+    }
+
+    function importJSON(e) {
+      let reader = new FileReader();
+      reader.onload = (event) => {
+        timelines = JSON.parse(event.target.result);
+        localStorage.setItem('kronos_data', JSON.stringify(timelines));
+        render();
+      };
+      reader.readAsText(e.target.files[0]);
+    }
+
+    window.addEventListener('resize', render);
+    render();
+  </script>
 </body>
 </html>
