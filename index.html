@@ -3,25 +3,34 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Kronos — Frises chronologiques</title>
+<title>Kronos — Rappelons que c'est un méchant</title>
 <meta name="theme-color" content="#1b2430">
 <meta name="description" content="Créez et consultez des frises chronologiques à partir de listes de dates.">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#1b2430; --ink-2:#232f3e; --ink-3:#2c3a4c;
-  --paper:#f2ece0; --paper-2:#e9e1d0; --paper-line:#c9b896;
-  --brass:#8a6d3b; --brass-light:#c9a86a;
-  --teal:#2f6f6b; --teal-light:#4a938d;
-  --coral:#c05a4e;
-  --text-ink:#2a2118; --text-light:#eee8da; --text-dim:#9aa7b5;
+  --paper:#f3ece2; --paper-2:#e9dfd0; --paper-line:#cdb99a;
+  --brass:#b3703f; --brass-light:#c9955f;
+  --teal:#5f8f88; --teal-light:#79aca4;
+  --coral:#c0765f;
+  --text-ink:#33291f; --text-light:#eee8da; --text-dim:#9aa7b5;
+  --paper-dim:#7d6f5c;
   --danger:#b0463c;
   --radius:10px;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
-  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
-  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+  --serif: "Lora", Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  --ui: "Lora", Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+}
+/* item 1 : mode nuit — assombrit aussi la "feuille" de la frise, pas seulement le chrome de l'appli */
+[data-theme="dark"]{
+  --paper:#20242b; --paper-2:#262b33; --paper-line:#454c58;
+  --text-ink:#e9e3d4; --paper-dim:#a79f8f;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -124,9 +133,9 @@ input, textarea, select, button{font-family:inherit; color:inherit}
 #viewPane{flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; background:var(--paper); color:var(--text-ink)}
 #timelineContainer{flex:1 1 auto; min-height:0; overflow:auto; position:relative}
 #timelineContainer.vertical{overflow-y:auto; overflow-x:hidden}
-#timelineContainer.horizontal{overflow-x:auto; overflow-y:hidden; touch-action:pan-x pan-y}
+#timelineContainer.horizontal{overflow-x:auto; overflow-y:auto; touch-action:pan-x pan-y}
 
-.empty-state{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#8a7d63; gap:8px; text-align:center; padding:30px}
+.empty-state{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--paper-dim); gap:8px; text-align:center; padding:30px}
 .empty-state h2{font-family:var(--serif); font-weight:600; margin:0; color:var(--text-ink)}
 
 /* mobile tab bar (masqué en desktop) */
@@ -153,19 +162,20 @@ input, textarea, select, button{font-family:inherit; color:inherit}
 
 /* ---------- TIMELINE — HORIZONTAL (SVG) ---------- */
 svg.frise{display:block}
-.axis-line{stroke:var(--ink); stroke-width:3}
+.axis-line{stroke:var(--text-ink); stroke-width:3}
 .tick{stroke:var(--paper-line); stroke-width:1.5}
-.tick-label{font-family:var(--mono); font-size:11px; fill:#7a6d54}
+.tick-label{font-family:var(--mono); font-size:11px; fill:var(--paper-dim)}
 .connector{stroke-width:1.4; fill:none}
 .connector.dashed{stroke-dasharray:3,3}
 .event-dot{stroke:var(--paper); stroke-width:1.5}
-.event-date{font-family:var(--mono); font-weight:700; font-size:12px}
-.event-annotation{font-family:var(--ui); font-style:italic; font-size:11px; fill:#6b6152}
-.event-desc{font-family:var(--ui); font-size:12.5px; color:var(--text-ink); line-height:1.35}
+.event-date{font-family:var(--mono); font-weight:600; font-size:12px}
+.event-annotation{font-family:var(--ui); font-style:italic; font-size:11px; fill:var(--paper-dim)}
+.event-desc{font-family:var(--ui); font-size:12.5px; color:var(--text-ink); line-height:1.4}
 .event-desc b{font-weight:700}
 .event-desc i{font-style:italic}
 .period-bar{stroke-width:4; fill:none}
 .legend-swatch{stroke:rgba(0,0,0,.2)}
+.legend-text{fill:var(--paper-dim); font-family:var(--ui)}
 
 /* ---------- TIMELINE — VERTICAL ---------- */
 .v-timeline{position:relative; max-width:900px; margin:0 auto; padding:26px 10px 60px}
@@ -175,34 +185,43 @@ svg.frise{display:block}
 .v-item .v-gap{width:28px; flex:0 0 28px; display:flex; justify-content:center; position:relative}
 .v-item .v-gap::before{content:""; position:absolute; top:9px; width:100%; height:1.5px; background:var(--paper-line)}
 .v-item .v-dot{position:absolute; top:2px; width:10px; height:10px; border-radius:50%; border:2px solid var(--paper); z-index:2}
+/* item 6 : figuré distinct pour une période (petite barre) plutôt qu'une pastille ponctuelle */
+.v-item .v-dot.v-dot-period{width:18px; height:8px; top:5px; border-radius:4px}
 .v-item.point .v-side.dates{text-align:right}
 .v-item.point .v-side.periods{visibility:hidden}
 .v-item.period .v-side.periods{text-align:left}
 .v-item.period .v-side.dates{visibility:hidden}
-.v-date{font-family:var(--mono); font-weight:700; font-size:13px}
-.v-annotation{font-style:italic; font-size:11.5px; color:#6b6152; margin-top:1px}
+.v-date{font-family:var(--mono); font-weight:600; font-size:13px}
+.v-annotation{font-style:italic; font-size:11.5px; color:var(--paper-dim); margin-top:1px}
 .v-desc{font-size:13px; margin-top:3px; line-height:1.4}
 .v-desc.multi div{padding:2px 0}
-.v-desc.multi div + div{border-top:1px dashed var(--paper-line); padding-top:4px; margin-top:2px}
+.v-desc.multi div + div{border-top:2px solid var(--paper-line); padding-top:4px; margin-top:2px}
 
+/* item 15 : mise en page verticale mobile réécrite en grille (évite tout
+   positionnement absolu fragile qui décalait pastilles/boîtes de l'axe) */
 @media (max-width:520px){
   .v-timeline{padding:20px 4px 60px}
-  .v-axis{left:74px; transform:none}
-  .v-item{align-items:flex-start}
-  .v-item .v-side.dates{width:70px; flex:0 0 70px; text-align:right !important; padding-right:6px}
-  .v-item .v-side.periods{width:auto; flex:1 1 auto; text-align:left !important; padding-left:20px}
-  .v-item .v-gap{width:0; flex:0 0 0}
+  .v-axis{left:78px; transform:none}
+  .v-item{display:grid; grid-template-columns:70px 16px 1fr; align-items:start; column-gap:0}
+  .v-item .v-side{width:auto}
+  .v-item .v-side.dates{grid-column:1; text-align:right !important; padding-right:6px}
+  .v-item .v-side.periods{grid-column:3; text-align:left !important; padding-left:10px}
+  .v-item .v-gap{grid-column:2; width:auto; flex:none; position:static; display:flex; justify-content:center}
   .v-item .v-gap::before{display:none}
-  .v-item .v-dot{left:70px; margin-left:-5px}
+  .v-item .v-dot{position:static; margin-top:3px; left:auto; margin-left:0}
+  .v-item .v-dot.v-dot-period{margin-top:6px}
   .v-item.point .v-side.periods, .v-item.period .v-side.dates{visibility:visible}
 }
 
-/* ---------- IMPRESSION ---------- */
+/* ---------- IMPRESSION (item 16) ---------- */
+#printPages{display:none}
 @media print{
   #topbar, #panel, #editorPane, #catFilterBar, #mobileTabs, #fsExitBtn, #editorFoot{display:none !important}
   html, body{overflow:visible !important; background:#fff}
-  #app, #main, #viewPane, #timelineContainer{display:block !important; height:auto !important; overflow:visible !important; background:#fff !important}
-  .print-page{page-break-after:always; overflow:hidden; position:relative}
+  #app, #main, #viewPane{display:block !important; height:auto !important; overflow:visible !important; background:#fff !important}
+  #timelineContainer{display:none !important}
+  #printPages{display:block !important}
+  .print-page{page-break-after:always; overflow:hidden; position:relative; background:#fff}
   .print-page:last-child{page-break-after:auto}
   @page{ margin:10mm }
 }
@@ -227,6 +246,7 @@ svg.frise{display:block}
     <div class="spacer"></div>
     <div class="topbar-right">
       <button class="btn icon hide-narrow" id="btnOrientation" title="Basculer horizontal / vertical">↔</button>
+      <button class="btn icon" id="btnDarkMode" title="Mode nuit">☾</button>
       <button class="btn icon" id="btnFullscreen" title="Plein écran">⛶</button>
       <button class="btn icon hide-narrow" id="btnPrint" title="Imprimer / PDF">🖶</button>
     </div>
