@@ -165,13 +165,15 @@ const DateEngine = (() => {
     return { kind: 'period', value: v1, endValue: v2, approx: false, attached: false, raw: raw.trim(), startTok, endTok };
   }
 
-  const DECADE_RE = /^(?:ann[ée]es\s+)?(-?\d{3,4})s?$/i;
+  const DECADE_RE = /^(?:(mi|milieu)\s+)?(?:ann[ée]es\s+)?(-?\d{3,4})s?$/i;
   function parseDecadeToken(raw) {
     const s = raw.trim();
     if (!/ann[ée]es\s+\d/i.test(s) && !/\d+s$/i.test(s)) return null;
     const m = DECADE_RE.exec(s);
     if (!m) return null;
-    return { value: parseInt(m[1], 10) };
+    let value = parseInt(m[2], 10);
+    if (m[1]) value += value < 0 ? -5 : 5; // "mi 1950s" -> milieu de la décennie
+    return { value };
   }
 
   function parseNumericDate(s) {
@@ -293,6 +295,18 @@ const DateEngine = (() => {
       }
     }
 
+    // Borne de fin inconnue : "vers 440- ?" -> période de durée minimale,
+    // affiche "?" pour la fin sans influencer sa position (item 13).
+    m = /^(.+?)\s*-\s*\?$/.exec(raw);
+    if (m) {
+      const a = parseSingleDateToken(m[1]);
+      if (a) {
+        const epsilon = a.kind === 'century' ? 5 : a.kind === 'decade' ? 5 : 1;
+        const endTok = Object.assign({}, a, { value: a.value + epsilon, openEnded: true, approx: false, uncertain: false });
+        return { kind: 'period', value: a.value, endValue: endTok.value, approx: a.approx, attached: true, raw: rawInput.trim(), startTok: a, endTok };
+      }
+    }
+
     const per = trySplitPeriod(raw);
     if (per) {
       const { a, b } = per;
@@ -302,7 +316,7 @@ const DateEngine = (() => {
     return parseSingleDateToken(raw);
   }
 
-  return { parseDateExpression, parseSingleDateToken, romanToInt, intToRoman, MONTHS, centuryFraction, centuryBounds };
+  return { parseDateExpression, parseSingleDateToken, romanToInt, intToRoman, MONTHS, centuryFraction, centuryBounds, ymdToValue };
 })();
 
 /* ---------------------------------------------------------------------------
@@ -360,7 +374,7 @@ const LineParser = (() => {
       if (!rest) continue;
       const d = DateEngine.parseDateExpression(candidate);
       if (!d) continue;
-      if (count === 1 && d.kind === 'point' && !d.month && !d.approx && Math.abs(d.year) < 100) continue;
+      if (count === 1 && d.kind === 'point' && !d.month && !d.approx && Math.abs(d.year) < 10) continue;
       return { date: d, description: rest };
     }
     return null;
@@ -473,8 +487,10 @@ const Fmt = (() => {
   }
 
   // Ajoute le préfixe d'approximation ("vers "/"~") et le "?" d'incertitude
-  // autour du texte de base d'un token de date.
+  // autour du texte de base d'un token de date. Une borne ouverte ("- ?")
+  // s'affiche simplement "?" (item 13).
   function formatToken(tok, opts) {
+    if (tok.openEnded) return '?';
     let s = pointToText(tok, opts);
     if (tok.approx) s = (opts.abbreviate ? '~' : 'vers ') + s;
     if (tok.uncertain) s += ' ?';
@@ -582,11 +598,17 @@ const Store = (() => {
     if (!t) { t = allTimelines()[0]; if (t) state.currentTimelineId = t.id; }
     return t;
   }
+  function hslColor(index) {
+    // Rotation à l'angle d'or : garantit des teintes bien réparties, jamais
+    // deux fois la même, quel que soit le nombre de catégories (item 16).
+    const hue = (index * 137.508) % 360;
+    return `hsl(${hue.toFixed(0)}, 46%, 54%)`;
+  }
   function colorForCategory(timeline, cat) {
     if (!cat) return null;
     if (!timeline.categoryColors[cat]) {
-      const used = Object.values(timeline.categoryColors);
-      const next = PALETTE[used.length % PALETTE.length];
+      const used = Object.keys(timeline.categoryColors).length;
+      const next = used < PALETTE.length ? PALETTE[used] : hslColor(used);
       timeline.categoryColors[cat] = next;
       save();
     }
@@ -604,6 +626,28 @@ const Store = (() => {
    5. CONSTRUCTION DE LA LISTE D'ÉVÉNEMENTS À PARTIR DU TEXTE SOURCE
    ------------------------------------------------------------------------- */
 const EventsBuilder = (() => {
+  // Applique le réglage "tout convertir en av. J.-C." à un token de date qui
+  // n'est pas déjà explicitement av. J.-C. (recalcule aussi sa valeur, pas
+  // seulement son affichage, afin que le tri chronologique reste correct — item 6).
+  function negateToken(tok) {
+    if (!tok) return tok;
+    if (tok.kind === 'point') {
+      if (!tok.isBC) { tok.isBC = true; tok.year = -Math.abs(tok.year); tok.value = DateEngine.ymdToValue({ year: tok.year, month: tok.month, day: tok.day }); }
+    } else if (tok.kind === 'century') {
+      if (!tok.isBC) { tok.isBC = true; tok.value = DateEngine.centuryFraction(tok.century, true, tok.frac); }
+    } else if (tok.kind === 'decade') {
+      if (tok.value > 0) tok.value = -tok.value;
+    }
+  }
+  function applyAllBC(date) {
+    if (date.kind === 'period') {
+      negateToken(date.startTok); negateToken(date.endTok);
+      date.value = date.startTok.value; date.endValue = date.endTok.value;
+    } else if (date.kind === 'point' || date.kind === 'century' || date.kind === 'decade') {
+      negateToken(date);
+    }
+  }
+
   function buildAll(timeline) {
     const lines = timeline.text.split('\n');
     const events = [];
@@ -616,6 +660,7 @@ const EventsBuilder = (() => {
       const parts = timeline.settings.splitSubEvents ? LineParser.splitSubEvents(ev) : [ev];
       for (const p of parts) events.push(p);
     }
+    if (timeline.settings.allBC) { for (const ev of events) applyAllBC(ev.date); }
     // attribue les couleurs de catégorie (et les enregistre dans la frise) :
     // toutes les catégories obtiennent une couleur (pour les puces de filtre),
     // mais seule la PREMIÈRE de chaque événement colore sa date sur la frise.
@@ -627,7 +672,10 @@ const EventsBuilder = (() => {
     // tri chronologique (les dates av. J.-C. étant déjà des valeurs négatives
     // correctement ordonnées après la correction du moteur de dates)
     events.sort((a, b) => a.date.value - b.date.value);
-    return { events, warnings, total: lines.filter(l => l.trim()).length };
+    // catégories réellement présentes dans le texte actuel (pas de mémoire
+    // fantôme des catégories supprimées — item 5)
+    const presentCategories = [...new Set(events.flatMap(e => (e.categories && e.categories.length ? e.categories : (e.category ? [e.category] : []))))];
+    return { events, warnings, total: lines.filter(l => l.trim()).length, presentCategories };
   }
 
   // Regroupe les événements consécutifs qui partagent EXACTEMENT la même date
@@ -677,12 +725,13 @@ const RenderHorizontal = (() => {
     return Math.max(1, lines);
   }
 
-  function boxMetrics(cluster, boxWidth) {
-    let h = 20; // date
-    if (cluster.annotation) h += 14;
+  function boxMetrics(cluster, boxWidth, isPeriod) {
+    let h = 18; // date
+    if (cluster.annotation) h += 13;
     const items = cluster.items;
-    for (const it of items) h += estimateLines(it.text, boxWidth - 10, 12.5) * 15 + (items.length > 1 ? 6 : 0);
-    h += 8;
+    for (const it of items) h += estimateLines(it.text, boxWidth - 10, 12.5) * 14.5 + (items.length > 1 ? 5 : 0);
+    h += 6;
+    if (isPeriod) h += 16; // bande dédiée à la barre de période (item 3)
     return { w: boxWidth, h };
   }
 
@@ -731,7 +780,7 @@ const RenderHorizontal = (() => {
     return { aboveCount: lanesAbove.length, belowCount: lanesBelow.length };
   }
 
-  function render(container, timeline, built, opts) {
+  function render(container, timeline, built, opts, presentCategories) {
     const clusters = EventsBuilder.cluster(built.events);
     if (!clusters.length) {
       container.innerHTML = `<div class="empty-state"><h2>Aucun événement pour l'instant</h2><p>Ajoutez des lignes dans l'éditeur, par&nbsp;ex. « 1789&nbsp;: Prise de la Bastille »</p></div>`;
@@ -765,36 +814,39 @@ const RenderHorizontal = (() => {
       const isPeriod = c.date.kind === 'period';
       const x0raw = isPeriod ? x(Math.min(c.date.value, c.date.endValue)) : x(c.date.value) - boxWidth / 2;
       const x1raw = isPeriod ? x(Math.max(c.date.value, c.date.endValue)) : x(c.date.value) + boxWidth / 2;
-      const m = boxMetrics(c, boxWidth);
+      const m = boxMetrics(c, boxWidth, isPeriod);
       const boxX0 = x(c.date.value) - boxWidth / 2;
       const boxX1 = boxX0 + boxWidth;
       const x0 = Math.min(x0raw, boxX0);
       const x1 = Math.max(x1raw, boxX1);
       return { c, i, side: i % 2 === 0 ? 'above' : 'below', x0, x1, h: m.h, boxWidth, isPeriod };
     });
-    packLanes(items, 16);
+    packLanes(items, 12);
 
+    // item 4 : lanes plus condensées (moins d'espace vertical perdu)
     function laneOffsets(side) {
       const maxLane = Math.max(-1, ...items.filter(it => it.side === side).map(it => it.lane));
       const heights = new Array(maxLane + 1).fill(0);
       for (const it of items) if (it.side === side) heights[it.lane] = Math.max(heights[it.lane], it.h);
       const offsets = [];
-      let acc = 26;
-      for (let li = 0; li <= maxLane; li++) { offsets.push(acc); acc += heights[li] + 22; }
+      let acc = 18;
+      for (let li = 0; li <= maxLane; li++) { offsets.push(acc); acc += heights[li] + 12; }
       return { offsets, total: acc };
     }
     const aboveInfo = laneOffsets('above');
     const belowInfo = laneOffsets('below');
     const tickStrip = timeline.settings.gradStep === 'off' ? 6 : 26;
-    const axisY = aboveInfo.total + 20;
-    const height = axisY + tickStrip + belowInfo.total + 30;
+    const axisY = aboveInfo.total + 16;
+    const height = axisY + tickStrip + belowInfo.total + 24;
 
     for (const it of items) {
       it.boxY = it.side === 'above' ? axisY - (aboveInfo.offsets[it.lane] + it.h) : axisY + tickStrip + belowInfo.offsets[it.lane];
       it.boxLeft = it.isPeriod
         ? (x(Math.min(it.c.date.value, it.c.date.endValue)) + x(Math.max(it.c.date.value, it.c.date.endValue))) / 2 - it.boxWidth / 2
         : x(it.c.date.value) - it.boxWidth / 2;
-      if (it.isPeriod) it.barY = it.side === 'above' ? it.boxY + it.h - 6 : it.boxY + 6;
+      it.boxCenterX = it.boxLeft + it.boxWidth / 2;
+      // item 3 : la barre de période occupe une bande dédiée, séparée du texte
+      if (it.isPeriod) it.barY = it.side === 'above' ? it.boxY + it.h - 8 : it.boxY + 8;
     }
 
     // --- Obstacles (pour interrompre les traits qui passent sous une boîte/barre — item 18) ---
@@ -803,7 +855,7 @@ const RenderHorizontal = (() => {
       obstacles.push({ x0: it.boxLeft, x1: it.boxLeft + it.boxWidth, y0: it.boxY, y1: it.boxY + it.h });
       if (it.isPeriod) {
         const bx0 = x(Math.min(it.c.date.value, it.c.date.endValue)), bx1 = x(Math.max(it.c.date.value, it.c.date.endValue));
-        obstacles.push({ x0: bx0, x1: bx1, y0: it.barY - 3, y1: it.barY + 3 });
+        obstacles.push({ x0: bx0, x1: bx1, y0: it.barY - 4, y1: it.barY + 4 });
       }
     }
 
@@ -832,15 +884,20 @@ const RenderHorizontal = (() => {
       const color = c.color || 'var(--text-ink)';
       const cx = x(d.value);
       const boxLeft = it.boxLeft;
+      const textX = it.boxCenterX; // item 9 : texte centré sur le point d'accroche
 
+      let textTop, textBottom;
       if (it.isPeriod) {
-        // item 7 : pas de rattachement physique à la flèche pour une période
+        // la bande occupée par la barre est réservée, hors de la zone de texte
+        textTop = it.side === 'above' ? it.boxY : it.boxY + 16;
+        textBottom = it.side === 'above' ? it.boxY + it.h - 16 : it.boxY + it.h;
         const bx0 = x(Math.min(d.value, d.endValue)), bx1 = x(Math.max(d.value, d.endValue));
         const by = it.barY;
         evSvg += `<line class="period-bar" x1="${bx0}" y1="${by}" x2="${bx1}" y2="${by}" stroke="${color}"/>`;
         evSvg += `<line x1="${bx0}" y1="${by - 5}" x2="${bx0}" y2="${by + 5}" stroke="${color}" stroke-width="2"/>`;
         evSvg += `<line x1="${bx1}" y1="${by - 5}" x2="${bx1}" y2="${by + 5}" stroke="${color}" stroke-width="2"/>`;
       } else {
+        textTop = it.boxY; textBottom = it.boxY + it.h;
         const attached = d.attached !== false; // item 8 : siècle/décennie -> non rattaché
         evSvg += `<circle class="event-dot" cx="${cx}" cy="${axisY}" r="4" fill="${color}"/>`;
         if (attached) {
@@ -851,24 +908,24 @@ const RenderHorizontal = (() => {
       }
 
       const dateLabel = Fmt.displayDate(d, timeline.settings);
-      let fy = it.boxY + 12;
-      evSvg += `<text class="event-date" x="${boxLeft}" y="${fy}" fill="${color}">${esc(dateLabel)}</text>`;
-      fy += 14;
-      if (c.annotation) { evSvg += `<text class="event-annotation" x="${boxLeft}" y="${fy}">${esc(c.annotation)}</text>`; fy += 14; }
-      evSvg += `<foreignObject x="${boxLeft}" y="${fy - 11}" width="${it.boxWidth}" height="${it.boxY + it.h - fy + 14}">`;
+      let fy = textTop + 12;
+      evSvg += `<text class="event-date" x="${textX}" y="${fy}" text-anchor="middle" fill="${color}">${esc(dateLabel)}</text>`;
+      fy += 13;
+      if (c.annotation) { evSvg += `<text class="event-annotation" x="${textX}" y="${fy}" text-anchor="middle">${esc(c.annotation)}</text>`; fy += 13; }
+      evSvg += `<foreignObject x="${boxLeft}" y="${fy - 10}" width="${it.boxWidth}" height="${Math.max(14, textBottom - fy + 12)}">`;
       evSvg += `<div xmlns="http://www.w3.org/1999/xhtml" class="event-desc">`;
       if (c.items.length > 1) {
-        evSvg += c.items.map((sub, idx) => `<div style="${idx > 0 ? `border-top:2px solid ${sub.color || 'var(--paper-line)'};margin-top:4px;padding-top:4px` : ''}">${Fmt.markupToHtml(sub.text)}</div>`).join('');
+        evSvg += c.items.map((sub, idx) => `<div style="${idx > 0 ? `border-top:2px solid ${sub.color || 'var(--paper-line)'};margin-top:3px;padding-top:3px` : ''}">${Fmt.markupToHtml(sub.text)}</div>`).join('');
       } else {
         evSvg += Fmt.markupToHtml(c.items[0] ? c.items[0].text : '');
       }
       evSvg += `</div></foreignObject>`;
     }
 
-    // --- Légende (catégories PRINCIPALES uniquement — item 4) ---
+    // --- Légende (catégories réellement présentes et principales — items 4/5) ---
     let legendSvg = '';
     if (timeline.settings.showLegend) {
-      const cats = Object.entries(timeline.categoryColors);
+      const cats = (presentCategories || []).filter(c => timeline.categoryColors[c]).map(c => [c, timeline.categoryColors[c]]);
       if (cats.length) {
         let lx = marginX;
         legendSvg += `<g transform="translate(0,${height - 6})">`;
@@ -958,56 +1015,15 @@ const RenderVertical = (() => {
 /* ---------------------------------------------------------------------------
    8. IMPRESSION — pagination A4 (horizontale) / page unique (verticale)
    ------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   8bis. IMPRESSION (item 15) — on n'intervient plus : le navigateur imprime
+   la frise telle quelle (pagination/mise à l'échelle natives).
+   ------------------------------------------------------------------------- */
 const PrintPager = (() => {
-  const PAGE_PX = { w: 1030, h: 700 }; // A4 paysage utile @ ~96dpi, marges 10mm déduites
-
-  function ensurePageStyle(orientation) {
-    let tag = document.getElementById('printPageStyle');
-    if (!tag) { tag = document.createElement('style'); tag.id = 'printPageStyle'; document.head.appendChild(tag); }
-    tag.textContent = `@page{ size: A4 ${orientation === 'horizontal' ? 'landscape' : 'portrait'}; margin: 10mm; }`;
-  }
-
-  function preparePrint(container, timeline) {
-    ensurePageStyle(timeline.settings.orientation);
-    const old = document.getElementById('printPages');
-    if (old) old.remove();
-    const holder = document.createElement('div');
-    holder.id = 'printPages';
-
-    if (timeline.settings.orientation === 'horizontal') {
-      const svg = container.querySelector('svg.frise');
-      if (!svg) { document.body.appendChild(holder); return holder; }
-      const totalW = parseFloat(svg.getAttribute('width'));
-      const totalH = parseFloat(svg.getAttribute('height'));
-      const pages = Math.max(1, Math.ceil(totalW / PAGE_PX.w));
-      for (let p = 0; p < pages; p++) {
-        const pageDiv = document.createElement('div');
-        pageDiv.className = 'print-page';
-        pageDiv.style.cssText = `width:${PAGE_PX.w}px; height:${totalH + 22}px;`;
-        const clip = document.createElement('div');
-        clip.style.cssText = `width:${PAGE_PX.w}px; height:${totalH}px; overflow:hidden; position:relative;`;
-        const clone = svg.cloneNode(true);
-        clone.style.cssText = `position:absolute; left:${-p * PAGE_PX.w}px; top:0;`;
-        clip.appendChild(clone);
-        pageDiv.appendChild(clip);
-        const label = document.createElement('div');
-        label.style.cssText = 'font-size:10px; color:#999; text-align:right; padding:2px 4px;';
-        label.textContent = `Page ${p + 1} / ${pages}`;
-        pageDiv.appendChild(label);
-        holder.appendChild(pageDiv);
-      }
-    } else {
-      const src = container.querySelector('.v-timeline');
-      const pageDiv = document.createElement('div');
-      pageDiv.className = 'print-page';
-      if (src) pageDiv.appendChild(src.cloneNode(true));
-      holder.appendChild(pageDiv);
-    }
-    document.body.appendChild(holder);
-    return holder;
-  }
+  function preparePrint() { /* volontairement vide : aucune intervention */ }
   return { preparePrint };
 })();
+
 
 /* ---------------------------------------------------------------------------
    9. APPLICATION — état, rendu de l'UI, câblage des événements
@@ -1016,6 +1032,8 @@ const App = (() => {
   const $ = (sel) => document.querySelector(sel);
   const els = {};
   let catFilter = new Set(); // item 2 : sélection multiple de catégories
+  let editorFilterActive = false; // item 2 : l'éditeur reflète le filtre actif
+  let editorFilterNonMatching = []; // lignes mises de côté pendant le filtrage
   let renderTimer = null;
 
   function init() {
@@ -1110,6 +1128,8 @@ const App = (() => {
   function loadTimelineIntoUI(t) {
     if (!t) return;
     catFilter.clear();
+    editorFilterActive = false;
+    editorFilterNonMatching = [];
     els.timelineTitle.value = t.name;
     els.editor.value = t.text;
     els.selOrientation.value = t.settings.orientation;
@@ -1153,15 +1173,16 @@ const App = (() => {
     if (!t) return;
     const built = EventsBuilder.buildAll(t);
     renderCatFilterBar(t, built);
-    renderCategoryPanel(t);
+    renderCategoryPanel(t, built);
 
-    let events = built.events;
-    if (catFilter.size) {
-      events = events.filter(e => {
-        const cats = e.categories && e.categories.length ? e.categories : (e.category ? [e.category] : []);
-        return cats.some(c => catFilter.has(c));
-      });
-    }
+    // item 17 : les événements sans #catégorie restent toujours visibles,
+    // quel que soit le filtre actif ; "Toutes" (aucune sélection) affiche tout.
+    let events = built.events.filter(e => {
+      if (catFilter.size === 0) return true;
+      const cats = e.categories && e.categories.length ? e.categories : (e.category ? [e.category] : []);
+      if (!cats.length) return true;
+      return cats.some(c => catFilter.has(c));
+    });
     const filteredBuilt = { events, warnings: built.warnings, total: built.total };
 
     els.lineCount.textContent = `${built.total} ligne${built.total > 1 ? 's' : ''}`;
@@ -1179,20 +1200,22 @@ const App = (() => {
       RenderVertical.render(els.timelineContainer, t, filteredBuilt);
     } else {
       els.timelineContainer.className = 'horizontal';
-      RenderHorizontal.render(els.timelineContainer, t, filteredBuilt, t.settings);
+      RenderHorizontal.render(els.timelineContainer, t, filteredBuilt, t.settings, built.presentCategories);
     }
   }
 
   /* ---------- Catégories : filtre (multi-sélection, item 2) + couleurs ---------- */
   function renderCatFilterBar(t, built) {
-    const cats = [...new Set(built.events.flatMap(e => (e.categories && e.categories.length ? e.categories : (e.category ? [e.category] : []))))];
+    const cats = built.presentCategories;
     els.catFilterBar.innerHTML = '';
     if (!cats.length) { els.catFilterBar.style.display = 'none'; return; }
     els.catFilterBar.style.display = 'flex';
+    // une sélection ne conserve que les catégories encore présentes
+    for (const c of [...catFilter]) if (!cats.includes(c)) catFilter.delete(c);
     const allChip = document.createElement('button');
     allChip.className = 'chip' + (catFilter.size === 0 ? ' active' : '');
     allChip.textContent = 'Toutes';
-    allChip.addEventListener('click', () => { catFilter.clear(); doRender(); });
+    allChip.addEventListener('click', () => { catFilter.clear(); onCategoryFilterChanged(); });
     els.catFilterBar.appendChild(allChip);
     for (const c of cats) {
       const chip = document.createElement('button');
@@ -1203,14 +1226,16 @@ const App = (() => {
       if (active) chip.style.background = t.categoryColors[c] || '';
       chip.addEventListener('click', () => {
         if (catFilter.has(c)) catFilter.delete(c); else catFilter.add(c);
-        doRender();
+        onCategoryFilterChanged();
       });
       els.catFilterBar.appendChild(chip);
     }
   }
 
-  function renderCategoryPanel(t) {
-    const cats = Object.keys(t.categoryColors);
+  // item 5 : n'affiche QUE les catégories réellement présentes dans le texte
+  // (plus de mémoire fantôme des catégories supprimées de l'éditeur).
+  function renderCategoryPanel(t, built) {
+    const cats = built.presentCategories;
     els.catColorList.innerHTML = '';
     els.catEmptyHint.style.display = cats.length ? 'none' : 'block';
     for (const c of cats) {
@@ -1255,6 +1280,47 @@ const App = (() => {
   function togglePanel() { els.panel.classList.toggle('open'); }
   function closePanel() { els.panel.classList.remove('open'); }
 
+  // item 2 : quand le filtre par #catégorie change, l'éditeur n'affiche (et ne
+  // trie) que les lignes correspondantes ; les autres sont mises de côté puis
+  // refusionnées telles quelles quand le filtre est levé.
+  function lineMatchesFilter(line) {
+    if (!line.trim()) return false;
+    const ev = LineParser.parseEventLine(line);
+    if (!ev || ev.unparsed) return false;
+    const cats = ev.categories && ev.categories.length ? ev.categories : (ev.category ? [ev.category] : []);
+    return cats.some(c => catFilter.has(c));
+  }
+  function mergeFilteredEditorBack(t) {
+    if (!editorFilterActive) return;
+    t.text = editorFilterNonMatching.concat(els.editor.value.split('\n')).join('\n');
+    Store.save();
+  }
+  function enterOrUpdateEditorFilter(t) {
+    mergeFilteredEditorBack(t);
+    const lines = t.text.split('\n');
+    const matching = [], nonMatching = [];
+    for (const l of lines) { if (l.trim() && lineMatchesFilter(l)) matching.push(l); else nonMatching.push(l); }
+    const sorted = matching
+      .map(l => ({ l, ev: LineParser.parseEventLine(l) }))
+      .sort((a, b) => a.ev.date.value - b.ev.date.value)
+      .map(x => x.l);
+    editorFilterNonMatching = nonMatching;
+    editorFilterActive = true;
+    els.editor.value = sorted.join('\n');
+  }
+  function exitEditorFilter(t) {
+    mergeFilteredEditorBack(t);
+    editorFilterActive = false;
+    editorFilterNonMatching = [];
+    els.editor.value = t.text;
+  }
+  function onCategoryFilterChanged() {
+    const t = currentTimeline();
+    if (!t) { doRender(); return; }
+    if (catFilter.size > 0) enterOrUpdateEditorFilter(t); else exitEditorFilter(t);
+    doRender();
+  }
+
   /* ---------- Éditeur : saisie, mise en forme, tri ---------- */
   function wrapSelection(marker) {
     const ta = els.editor;
@@ -1266,9 +1332,15 @@ const App = (() => {
     onEditorInput();
   }
 
+  function writeEditorTextBack(t) {
+    t.text = editorFilterActive
+      ? editorFilterNonMatching.concat(els.editor.value.split('\n')).join('\n')
+      : els.editor.value;
+  }
+
   function onEditorInput() {
     const t = currentTimeline(); if (!t) return;
-    t.text = els.editor.value;
+    writeEditorTextBack(t);
     Store.save();
     scheduleRender();
   }
@@ -1288,7 +1360,7 @@ const App = (() => {
     parsedLines.sort((a, b) => a.v - b.v);
     const finalText = parsedLines.map(x => x.l).concat(others).join('\n');
     els.editor.value = finalText;
-    t.text = finalText;
+    writeEditorTextBack(t);
     Store.save();
     scheduleRender(0);
   }
@@ -1349,12 +1421,8 @@ const App = (() => {
 
   /* ---------- Impression (item 16) ---------- */
   function doPrint() {
-    const t = currentTimeline(); if (!t) return;
-    const holder = PrintPager.preparePrint(els.timelineContainer, t);
-    const cleanup = () => { if (holder) holder.remove(); window.removeEventListener('afterprint', cleanup); };
-    window.addEventListener('afterprint', cleanup);
+    // item 15 : aucune intervention — impression native du navigateur.
     window.print();
-    setTimeout(cleanup, 4000); // filet de sécurité si "afterprint" n'est pas déclenché
   }
 
   /* ---------- Câblage des événements ---------- */
