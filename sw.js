@@ -1,25 +1,31 @@
-const CACHE = 'kronos-v2';
+
+Sw · JS
+const CACHE = 'kronos-v3';
 const ASSETS = [
   './',
   './index.html',
+  './app.js',
   './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-  './apple-touch-icon.png',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
+  './icons/apple-touch-icon.png',
+  './icons/favicon-48.png',
+  './icons/icon.svg',
 ];
-
+ 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).catch(() => {}));
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.all(ASSETS.map((a) => c.add(a).catch(() => {})))));
   self.skipWaiting();
 });
-
+ 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
   );
   self.clients.claim();
 });
-
+ 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
@@ -37,3 +43,5 @@ self.addEventListener('fetch', (e) => {
     })
   );
 });
+ 
+Claude a terminé sa réponse.
