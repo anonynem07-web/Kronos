@@ -7,8 +7,10 @@
 <meta name="theme-color" content="#1b2430">
 <meta name="description" content="Créez et consultez des frises chronologiques à partir de listes de dates.">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -100,6 +102,11 @@ input, textarea, select, button{font-family:inherit; color:inherit}
 .folder-head{display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:6px; cursor:pointer}
 .folder-head:hover{background:var(--chrome-bg-3)}
 .folder-head .name{flex:1; font-weight:600; font-size:13.5px}
+.folder-head .act, .tl-item .mv{opacity:.6; padding:3px 8px; border-radius:4px; font-size:14px; line-height:1}
+.folder-head .act:hover, .tl-item .mv:hover{opacity:1; background:rgba(0,0,0,.18)}
+.folder.drop > .folder-head{background:var(--chrome-bg-3); outline:2px dashed var(--teal)}
+.move-choices{display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:4px 7px 8px}
+.move-choices .chip:disabled{opacity:.45; cursor:default}
 .folder-timelines{padding-left:20px; display:flex; flex-direction:column; gap:1px}
 .tl-item{display:flex; align-items:center; gap:6px; padding:5px 7px; border-radius:6px; font-size:13px; cursor:pointer; color:var(--chrome-text-dim)}
 .tl-item:hover{background:var(--chrome-bg-3); color:var(--chrome-text)}
@@ -289,6 +296,7 @@ svg.frise{display:block}
 <div class="row"><label for="selArrow" title="Transforme la flèche en bande épaisse contenant les périodes">Périodes dans la flèche</label>
 <select id="selArrow"><option value="off">Non (flèche fine)</option></select>
 </div>
+<div class="row checkbox" id="rowArrowUntagged" style="display:none"><input type="checkbox" id="chkArrowUntagged"><label for="chkArrowUntagged">+ celles sans tag</label></div>
         <div class="row checkbox"><input type="checkbox" id="chkLegend" checked><label for="chkLegend">Afficher la légende</label></div>
         <h3 style="margin-top:16px">Format des dates</h3>
         <div class="row checkbox"><input type="checkbox" id="chkAllBC"><label for="chkAllBC">Tout convertir en av. J.-C.</label></div>
