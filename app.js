@@ -66,6 +66,26 @@ const DateEngine = (() => {
     return pos;
   }
 
+  // Une période dont une borne est un siècle couvre TOUT ce siècle : du début du premier
+  // (ou de la fraction indiquée : « fin Ier ») à la fin du dernier.
+  const FRAC_BOUNDS = { debut: [0, 0.2], milieu: [1 / 3, 2 / 3], fin: [0.8, 1], moitie1: [0, 0.5], moitie2: [0.5, 1], tiers1: [0, 1 / 3], tiers2: [1 / 3, 2 / 3], tiers3: [2 / 3, 1] };
+  function tokSpan(tok) {
+    if (tok.kind === 'century' && !tok.openEnded) {
+      const { start, end } = centuryBounds(tok.century, !!tok.isBC);
+      const [f0, f1] = FRAC_BOUNDS[tok.frac] || [0, 1];
+      const span = end - start;
+      return [start + Math.round(span * f0), start + Math.round(span * f1)];
+    }
+    return [tok.value, tok.value];
+  }
+  function fixPeriod(p) {
+    const [loA, hiA] = tokSpan(p.startTok), [loB, hiB] = tokSpan(p.endTok);
+    if (p.endTok.openEnded) { p.value = loA; p.endValue = p.endTok.value; return p; }
+    if (p.startTok.value <= p.endTok.value) { p.value = loA; p.endValue = hiB; }
+    else { p.value = hiA; p.endValue = loB; }
+    return p;
+  }
+
   const BC_SUFFIX_RE = /\s*(av\.?\s*j\.?-?c\.?|avant\s+j\.?-?c\.?)\s*$/i;
   // "ap. J.-C.", "apr. J.-C.", "après J.-C." (ou préfixe "+") : ère EXPLICITEMENT
   // après J.-C. Le réglage « tout convertir en av. J.-C. » n'y touche pas (item 13).
@@ -170,7 +190,7 @@ const DateEngine = (() => {
     const v2 = centuryFraction(n2, isBC, null);
     const startTok = { kind: 'century', value: v1, isBC, isAD, century: n1, frac, attached: false, raw: raw.trim() };
     const endTok = { kind: 'century', value: v2, isBC, isAD, century: n2, frac: null, attached: false, raw: raw.trim() };
-    return { kind: 'period', value: v1, endValue: v2, approx: false, attached: false, raw: raw.trim(), startTok, endTok };
+    return fixPeriod({ kind: 'period', value: v1, endValue: v2, approx: false, attached: false, raw: raw.trim(), startTok, endTok });
   }
 
     // "(Ier s. avant et IIe s. après J.-C.)" : période siècle av. J.-C. -> siècle apr. J.-C.
@@ -186,7 +206,7 @@ const DateEngine = (() => {
     const v2 = centuryFraction(n2, false, frac2);
     const startTok = { kind: 'century', value: v1, isBC: true, century: n1, frac: frac1, attached: false, raw: raw.trim() };
     const endTok = { kind: 'century', value: v2, isBC: false, century: n2, frac: frac2, attached: false, raw: raw.trim() };
-    return { kind: 'period', value: v1, endValue: v2, approx: false, attached: false, raw: raw.trim(), startTok, endTok };
+    return fixPeriod({ kind: 'period', value: v1, endValue: v2, approx: false, attached: false, raw: raw.trim(), startTok, endTok });
   }
 
   const DECADE_RE = /^(?:(mi|milieu)\s+)?(?:ann[ée]es\s+)?(-?\d{3,4})s?$/i;
@@ -286,7 +306,7 @@ const DateEngine = (() => {
     if (!tok) return;
     if (tok.kind === 'period') {
       applyEra(tok.startTok, era); applyEra(tok.endTok, era);
-      tok.value = tok.startTok.value; tok.endValue = tok.endTok.value;
+      fixPeriod(tok);
       return;
     }
     if (tok.toks) { tok.toks.forEach(t => applyEra(t, era)); recomputeCompound(tok); return; }
@@ -328,7 +348,7 @@ const DateEngine = (() => {
       if (b.kind === 'decade' && Math.abs(a.value - b.value) === 10) ok = true;
     }
     if (!ok) return null;
-    return { kind: 'period', value: a.value, endValue: b.value, approx: a.approx || b.approx, attached: false, raw, startTok: a, endTok: b };
+    return fixPeriod({ kind: 'period', value: a.value, endValue: b.value, approx: a.approx || b.approx, attached: false, raw, startTok: a, endTok: b });
   }
 
   function parseAltList(rawInput) {
@@ -454,14 +474,14 @@ const DateEngine = (() => {
       if (a) {
         const epsilon = a.kind === 'century' ? 5 : a.kind === 'decade' ? 5 : 1;
         const endTok = Object.assign({}, a, { value: a.value + epsilon, openEnded: true, approx: false, uncertain: false });
-        return { kind: 'period', value: a.value, endValue: endTok.value, approx: a.approx, attached: true, raw: rawInput.trim(), startTok: a, endTok };
+        return fixPeriod({ kind: 'period', value: a.value, endValue: endTok.value, approx: a.approx, attached: true, raw: rawInput.trim(), startTok: a, endTok });
       }
     }
 
     const per = trySplitPeriod(raw);
     if (per) {
       const { a, b } = per;
-      return { kind: 'period', value: a.value, endValue: b.value, approx: a.approx || b.approx, attached: true, raw: rawInput.trim(), startTok: a, endTok: b };
+      return fixPeriod({ kind: 'period', value: a.value, endValue: b.value, approx: a.approx || b.approx, attached: true, raw: rawInput.trim(), startTok: a, endTok: b });
     }
 
     return parseSingleDateToken(raw);
@@ -744,16 +764,19 @@ const Store = (() => {
     const c = rgb.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
     return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
   }
-  function softColor(hue) {
+  function softColor(hue, sat) {
+    if (sat == null) sat = SOFT_SAT;
     let lo = 0.15, hi = 0.85;
     for (let i = 0; i < 24; i++) {
       const mid = (lo + hi) / 2;
-      if (relLuminance(hslToRgb(hue, SOFT_SAT, mid)) < SOFT_LUM) lo = mid; else hi = mid;
+      if (relLuminance(hslToRgb(hue, sat, mid)) < SOFT_LUM) lo = mid; else hi = mid;
     }
-    return '#' + hslToRgb(hue, SOFT_SAT, (lo + hi) / 2).map(v => v.toString(16).padStart(2, '0')).join('');
+    return '#' + hslToRgb(hue, sat, (lo + hi) / 2).map(v => v.toString(16).padStart(2, '0')).join('');
   }
-  // bleu ardoise, terre cuite, vert sauge, mauve, ocre, sarcelle, rose ancien, indigo doux, olive, vert mousse
-  const PALETTE = [212, 12, 100, 285, 38, 172, 340, 250, 62, 145].map(softColor);
+  // 12 couleurs bien distinctes [teinte, saturation], ordonnées pour que les premiers tags
+  // soient les plus différents entre eux : bleu, terre cuite, vert, violet, ocre, sarcelle,
+  // rose, olive, indigo, brun, magenta, azur. Contraste mesuré ≥ 3,5:1 (jour et nuit).
+  const PALETTE = [[214, .46], [10, .52], [132, .36], [278, .40], [44, .62], [178, .52], [335, .44], [78, .50], [243, .42], [24, .34], [304, .38], [196, .60]].map(([h, s]) => softColor(h, s));
 
   function uid() { return 'id' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
 
@@ -761,7 +784,7 @@ const Store = (() => {
     return {
       orientation: 'horizontal', scale: 'auto', gradStep: 'auto', showLegend: true,
       allBC: false, hideBC: false, abbreviate: false, splitSubEvents: false,
-      scaleCustom: 100, gradCustom: 0, arrowPeriods: 'off',
+      scaleCustom: 100, gradCustom: 0, arrowPeriods: 'off', arrowUntagged: false,
     };
   }
   function newTimeline(name) {
@@ -813,7 +836,7 @@ const Store = (() => {
   function hslColor(index) {
     // Rotation à l'angle d'or : teintes bien réparties au-delà de la palette de base
     // (même saturation/luminance douces ; renvoie un #rrggbb utilisable par <input type=color>).
-    return softColor((index * 137.508) % 360);
+    return softColor((index * 137.508) % 360, 0.34 + (index % 4) * 0.07);
   }
   function colorForCategory(timeline, cat) {
     if (!cat) return null;
@@ -1048,7 +1071,9 @@ const RenderHorizontal = (() => {
     const inArrow = (ev) => {
       if (arrowSel === 'off' || ev.date.kind !== 'period') return false;
       if (arrowSel === 'all') return true;
-      if (arrowSel.startsWith('tag:')) return EventsBuilder.catsOf(ev).includes(arrowSel.slice(4));
+      const cats = EventsBuilder.catsOf(ev);
+      if (arrowSel === 'untagged') return !cats.length;
+      if (arrowSel.startsWith('tag:')) return cats.includes(arrowSel.slice(4)) || (!!S.arrowUntagged && !cats.length);
       return false;
     };
     const arrowEvents = all.filter(inArrow);
@@ -1403,7 +1428,7 @@ const App = (() => {
      'catColorList','catEmptyHint','btnExportOne','btnExportAll','btnImport','fileImport',
      'btnDupTimeline','btnDeleteTimeline','catFilterBar','editor','editorFoot','lineCount',
      'parseWarnings','viewPane','timelineContainer','mobileTabs','tabEdit','tabView',
-     'fsExitBtn','toast','app','inpScale','inpGrad','selArrow','btnResetColors'
+     'fsExitBtn','toast','app','inpScale','inpGrad','selArrow','chkArrowUntagged','rowArrowUntagged','btnResetColors'
     ].forEach(id => els[id] = document.getElementById(id));
   }
 
@@ -1415,6 +1440,29 @@ const App = (() => {
   }
 
   /* ---------- Panneau Frises (dossiers/frises) ---------- */
+  // Dossier dont la frise est en cours de déplacement (liste de destinations affichée)
+  let movingId = null;
+
+  function addTimelineToFolder(folder) {
+    const t = Store.newTimeline('Nouvelle frise');
+    folder.timelines.push(t);
+    folder.open = true;
+    Store.state.currentTimelineId = t.id; Store.save();
+    renderFolderList(); loadTimelineIntoUI(t);
+    toast(`Frise créée dans « ${folder.name} »`);
+  }
+
+  function moveTimeline(id, target) {
+    const src = Store.findTimelineFolder(id);
+    if (!src || src === target) { movingId = null; renderFolderList(); return; }
+    const t = src.timelines.find(x => x.id === id);
+    src.timelines = src.timelines.filter(x => x.id !== id);
+    target.timelines.push(t);
+    target.open = true; movingId = null;
+    Store.save(); renderFolderList();
+    toast(`Frise déplacée vers « ${target.name} »`);
+  }
+
   function renderFolderList() {
     els.folderList.innerHTML = '';
     for (const folder of Store.state.folders) {
@@ -1422,30 +1470,83 @@ const App = (() => {
       fd.className = 'folder';
       const head = document.createElement('div');
       head.className = 'folder-head';
-      head.innerHTML = `<span>${folder.open ? '▾' : '▸'}</span><span class="name">${Fmt.markupToHtml(folder.name)}</span>`;
-      head.title = 'Cliquer pour renommer / replier';
+      head.innerHTML = `<span>${folder.open ? '▾' : '▸'}</span><span class="name">${Fmt.markupToHtml(folder.name)}</span>`
+        + `<span class="act add" role="button" title="Nouvelle frise dans ce dossier">＋</span>`
+        + `<span class="act ren" role="button" title="Renommer le dossier">✎</span>`
+        + (isGeneralFolder(folder) ? '' : `<span class="act del" role="button" title="Supprimer le dossier (ses frises vont dans Mes frises)">🗑</span>`);
+      head.title = 'Cliquer pour replier / déplier';
       head.addEventListener('click', (e) => {
-        if (e.detail === 2) { renameFolder(folder); return; }
+        const act = e.target.closest ? e.target.closest('.act') : null;
+        if (act) {
+          e.stopPropagation();
+          if (act.classList.contains('add')) addTimelineToFolder(folder);
+          else if (act.classList.contains('del')) deleteFolder(folder);
+          else renameFolder(folder);
+          return;
+        }
         folder.open = !folder.open; Store.save(); renderFolderList();
       });
       fd.appendChild(head);
+      // glisser-déposer (ordinateur) : déposer une frise sur un dossier
+      fd.addEventListener('dragover', (e) => { if (movingDragId) { e.preventDefault(); fd.classList.add('drop'); } });
+      fd.addEventListener('dragleave', (e) => { if (!fd.contains(e.relatedTarget)) fd.classList.remove('drop'); });
+      fd.addEventListener('drop', (e) => {
+        e.preventDefault(); fd.classList.remove('drop');
+        if (movingDragId) { const id = movingDragId; movingDragId = null; moveTimeline(id, folder); }
+      });
       if (folder.open) {
         const list = document.createElement('div');
         list.className = 'folder-timelines';
         for (const t of folder.timelines) {
           const item = document.createElement('div');
           item.className = 'tl-item' + (t.id === Store.state.currentTimelineId ? ' active' : '');
-          item.innerHTML = `<span style="flex:1">${Fmt.markupToHtml(t.name)}</span><span class="x" title="Supprimer">✕</span>`;
+          item.draggable = true;
+          item.innerHTML = `<span style="flex:1">${Fmt.markupToHtml(t.name)}</span><span class="mv" role="button" title="Déplacer vers un autre dossier">⇄</span><span class="x" title="Supprimer">✕</span>`;
+          item.addEventListener('dragstart', (e) => { movingDragId = t.id; e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; });
+          item.addEventListener('dragend', () => { movingDragId = null; });
           item.addEventListener('click', (e) => {
             if (e.target.classList.contains('x')) {
               e.stopPropagation();
               if (confirm(`Supprimer la frise « ${t.name} » ?`)) deleteTimeline(t.id);
               return;
             }
+            if (e.target.classList.contains('mv')) {
+              e.stopPropagation();
+              movingId = movingId === t.id ? null : t.id;
+              renderFolderList();
+              return;
+            }
+            movingId = null;
             Store.state.currentTimelineId = t.id; Store.save();
             loadTimelineIntoUI(t); renderFolderList(); closePanel();
           });
           list.appendChild(item);
+          if (movingId === t.id) {
+            const box = document.createElement('div');
+            box.className = 'move-choices';
+            const lab = document.createElement('span'); lab.className = 'mini'; lab.textContent = 'Déplacer vers :';
+            box.appendChild(lab);
+            for (const f of Store.state.folders) {
+              const b = document.createElement('button');
+              b.className = 'chip' + (f === folder ? ' active' : '');
+              b.textContent = f.name;
+              b.disabled = f === folder;
+              b.addEventListener('click', (e) => { e.stopPropagation(); moveTimeline(t.id, f); });
+              box.appendChild(b);
+            }
+            const nb = document.createElement('button');
+            nb.className = 'chip'; nb.textContent = '＋ Nouveau dossier…';
+            nb.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const name = prompt('Nom du nouveau dossier :', 'Nouveau dossier');
+              if (name === null) return;
+              const nf = Store.newFolder(name.trim() || 'Nouveau dossier');
+              Store.state.folders.push(nf);
+              moveTimeline(t.id, nf);
+            });
+            box.appendChild(nb);
+            list.appendChild(box);
+          }
         }
         if (!folder.timelines.length) {
           const empty = document.createElement('div'); empty.className = 'mini'; empty.style.padding = '4px 7px';
@@ -1455,6 +1556,36 @@ const App = (() => {
       }
       els.folderList.appendChild(fd);
     }
+  }
+  let movingDragId = null;
+
+  // Le dossier « général » : destination de secours, jamais supprimable
+  const isGeneralFolder = (f) => f.name.trim().toLowerCase() === 'mes frises';
+
+  // Supprime un dossier ; ses frises ne sont JAMAIS perdues : elles sont déplacées dans « Mes frises »
+  function deleteFolder(folder) {
+    const n = folder.timelines.length;
+    const msg = n
+      ? `Supprimer le dossier « ${folder.name} » ?\n\nSes ${n} frise${n > 1 ? 's seront déplacées' : ' sera déplacée'} dans « Mes frises ».`
+      : `Supprimer le dossier vide « ${folder.name} » ?`;
+    if (!confirm(msg)) return;
+    if (n) {
+      let gen = Store.state.folders.find(f => f !== folder && isGeneralFolder(f));
+      if (!gen) { gen = Store.newFolder('Mes frises'); Store.state.folders.unshift(gen); }
+      gen.timelines.push(...folder.timelines);
+      gen.open = true;
+    }
+    Store.state.folders = Store.state.folders.filter(f => f !== folder);
+    movingId = null;
+    if (!Store.allTimelines().length) {
+      const nf = Store.newFolder('Mes frises'), nt = Store.newTimeline('Nouvelle frise');
+      nf.timelines.push(nt); Store.state.folders.push(nf);
+      Store.state.currentTimelineId = nt.id;
+      Store.save(); renderFolderList(); loadTimelineIntoUI(nt);
+    } else {
+      Store.save(); renderFolderList();
+    }
+    toast(n ? `Dossier supprimé — frises déplacées dans « Mes frises »` : 'Dossier supprimé');
   }
 
   function renameFolder(folder) {
@@ -1638,7 +1769,7 @@ const App = (() => {
   // item 9 : options « périodes dans la flèche » (Non / Toutes / une par tag présent)
   function refreshArrowSelect(t, cats) {
     const cur = (t.settings && t.settings.arrowPeriods) || 'off';
-    const opts = [['off', 'Non (flèche fine)'], ['all', 'Toutes les périodes']];
+    const opts = [['off', 'Non (flèche fine)'], ['all', 'Toutes les périodes'], ['untagged', 'Périodes sans tag']];
     for (const c of cats) opts.push(['tag:' + c, 'Périodes #' + c]);
     if (!opts.some(o => o[0] === cur)) opts.push([cur, cur.startsWith('tag:') ? 'Périodes #' + cur.slice(4) : cur]);
     els.selArrow.innerHTML = '';
@@ -1646,6 +1777,9 @@ const App = (() => {
       const o = document.createElement('option'); o.value = v; o.textContent = label; els.selArrow.appendChild(o);
     }
     els.selArrow.value = cur;
+    // « + celles sans tag » n'a de sens qu'avec un tag choisi
+    els.rowArrowUntagged.style.display = cur.startsWith('tag:') ? '' : 'none';
+    els.chkArrowUntagged.checked = !!t.settings.arrowUntagged;
   }
 
   /* ---------- Orientation / plein écran / onglets mobile ---------- */
@@ -1849,7 +1983,7 @@ const App = (() => {
     els.btnNewTimeline.addEventListener('click', () => {
       const folder = Store.findTimelineFolder(Store.state.currentTimelineId) || Store.state.folders[0];
       const t = Store.newTimeline('Nouvelle frise');
-      folder.timelines.push(t);
+      folder.timelines.push(t); folder.open = true;
       Store.state.currentTimelineId = t.id; Store.save();
       renderFolderList(); loadTimelineIntoUI(t);
     });
@@ -1904,7 +2038,12 @@ const App = (() => {
       els.selGrad.value = st.gradStep;
       Store.save(); scheduleRender(250);
     });
-    els.selArrow.addEventListener('change', () => { currentTimeline().settings.arrowPeriods = els.selArrow.value; Store.save(); scheduleRender(0); });
+    els.selArrow.addEventListener('change', () => {
+      currentTimeline().settings.arrowPeriods = els.selArrow.value;
+      els.rowArrowUntagged.style.display = els.selArrow.value.startsWith('tag:') ? '' : 'none';
+      Store.save(); scheduleRender(0);
+    });
+    els.chkArrowUntagged.addEventListener('change', () => { currentTimeline().settings.arrowUntagged = els.chkArrowUntagged.checked; Store.save(); scheduleRender(0); });
     els.btnResetColors.addEventListener('click', () => {
       const t = currentTimeline(); if (!t) return;
       const built = EventsBuilder.buildAll(t);
@@ -1941,7 +2080,9 @@ const App = (() => {
       if (e.key === 'Escape' && els.panel.classList.contains('open')) closePanel();
     });
     document.addEventListener('click', (e) => {
-      if (els.panel.classList.contains('open') && !els.panel.contains(e.target) && e.target !== els.frisesBtn) closePanel();
+      const path = e.composedPath ? e.composedPath() : [];
+      const inside = els.panel.contains(e.target) || path.includes(els.panel);
+      if (els.panel.classList.contains('open') && !inside && e.target !== els.frisesBtn) closePanel();
     });
   }
 
