@@ -21,7 +21,7 @@
   --coral:#c0765f;
   --text-ink:#33291f; --text-light:#eee8da; --text-dim:#9aa7b5;
   --paper-dim:#7d6f5c;
-  --danger:#b0463c;
+  --danger:#b0463c; --danger-text:#8c2d25;
   --radius:10px;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
   --serif: "Lora", Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
@@ -38,6 +38,7 @@
   --chrome-bg:#1b2430; --chrome-bg-2:#232f3e; --chrome-bg-3:#2c3a4c;
   --chrome-text:#eee8da; --chrome-text-dim:#9aa7b5;
   --chrome-border:#101820; --chrome-hover:#334153;
+  --danger-text:#ffb3ab;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -70,6 +71,9 @@ input, textarea, select, button{font-family:inherit; color:inherit}
 .btn.ghost:hover{background:var(--chrome-bg-3)}
 .btn.active{background:var(--teal); border-color:var(--teal); color:#fff}
 .btn.icon{padding:7px 9px}
+/* « Supprimer la frise » : texte rouge foncé en mode jour, rose clair en mode nuit (lisible dans les deux) */
+.btn.danger{color:var(--danger-text); border-color:var(--danger-text); font-weight:600}
+.btn.danger:hover{background:var(--danger); border-color:var(--danger); color:#fff}
 #frisesBtn{font-weight:600; letter-spacing:.02em}
 #timelineTitle{
   background:transparent; border:1px solid transparent; color:var(--chrome-text);
@@ -129,6 +133,7 @@ input, textarea, select, button{font-family:inherit; color:inherit}
   background:transparent; cursor:pointer;
 }
 .chip.active{background:var(--brass); border-color:var(--brass); color:#fff}
+.chip.untagged{font-style:italic}
 #editorWrap{position:relative; flex:1 1 auto; min-height:0}
 #editor{
   width:100%; height:100%; resize:none; border:none; background:var(--chrome-bg);
@@ -181,6 +186,9 @@ svg.frise{display:block}
 .event-desc b{font-weight:700}
 .event-desc i{font-style:italic}
 .period-bar{stroke-width:4; fill:none}
+.arrow-seg{height:100%; display:flex; flex-direction:column; justify-content:center; text-align:center; overflow:hidden; line-height:1.25}
+.arrow-name{font-family:var(--ui); font-size:11.5px; font-weight:600; color:var(--text-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.arrow-dates{font-family:var(--mono); font-size:9.5px; color:var(--text-ink); opacity:.75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .legend-swatch{stroke:rgba(0,0,0,.2)}
 .legend-text{fill:var(--paper-dim); font-family:var(--ui)}
 
@@ -269,11 +277,18 @@ svg.frise{display:block}
           <select id="selOrientation"><option value="horizontal">Horizontale</option><option value="vertical">Verticale</option></select>
         </div>
         <div class="row"><label for="selScale">Échelle</label>
-          <select id="selScale"><option value="auto">Automatique</option><option value="compact">Compacte</option><option value="large">Large</option></select>
+          <select id="selScale"><option value="auto">Automatique</option><option value="compact">Compacte</option><option value="large">Large</option><option value="custom">Personnalisée</option></select>
         </div>
+<div class="row"><label for="inpScale" title="100 % = largeur automatique ; 200 % = deux fois plus large">Zoom exact (%)</label>
+<input type="number" id="inpScale" min="10" max="3000" step="5" placeholder="100"></div>
         <div class="row"><label for="selGrad">Graduations</label>
-          <select id="selGrad"><option value="auto">Automatiques</option><option value="fine">Fines</option><option value="coarse">Larges</option><option value="off">Aucune</option></select>
+          <select id="selGrad"><option value="auto">Automatiques</option><option value="fine">Fines</option><option value="coarse">Larges</option><option value="off">Aucune</option><option value="custom">Pas personnalisé</option></select>
         </div>
+<div class="row"><label for="inpGrad" title="Écart entre deux graduations, en années">Pas exact (années)</label>
+<input type="number" id="inpGrad" min="1" step="1" placeholder="auto"></div>
+<div class="row"><label for="selArrow" title="Transforme la flèche en bande épaisse contenant les périodes">Périodes dans la flèche</label>
+<select id="selArrow"><option value="off">Non (flèche fine)</option></select>
+</div>
         <div class="row checkbox"><input type="checkbox" id="chkLegend" checked><label for="chkLegend">Afficher la légende</label></div>
         <h3 style="margin-top:16px">Format des dates</h3>
         <div class="row checkbox"><input type="checkbox" id="chkAllBC"><label for="chkAllBC">Tout convertir en av. J.-C.</label></div>
@@ -286,7 +301,8 @@ svg.frise{display:block}
       <div class="panel-col" id="colCats">
         <h3>Catégories (#tags)</h3>
         <div class="cat-list" id="catColorList"></div>
-        <div class="mini" id="catEmptyHint">Aucune catégorie détectée pour l'instant — ajoutez #NomDeCatégorie à la fin d'une ligne.</div>
+        <button class="btn" id="btnResetColors" style="margin-top:8px; width:100%; justify-content:center" title="Réattribue la palette douce par défaut">Palette par défaut</button>
+<div class="mini" id="catEmptyHint">Aucune catégorie détectée pour l'instant — ajoutez #NomDeCatégorie à la fin d'une ligne.</div>
       </div>
 
       <div class="panel-col" id="colData">
@@ -296,7 +312,7 @@ svg.frise{display:block}
         <div class="row"><button class="btn" id="btnImport" style="width:100%; justify-content:center">Importer un JSON</button></div>
         <input type="file" id="fileImport" accept="application/json" style="display:none">
         <div class="row" style="margin-top:14px"><button class="btn" id="btnDupTimeline" style="width:100%; justify-content:center">Dupliquer la frise</button></div>
-        <div class="row"><button class="btn" id="btnDeleteTimeline" style="width:100%; justify-content:center; color:#ffb3ab">Supprimer la frise</button></div>
+        <div class="row"><button class="btn danger" id="btnDeleteTimeline" style="width:100%; justify-content:center">Supprimer la frise</button></div>
       </div>
     </div>
   </div>
