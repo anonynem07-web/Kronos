@@ -141,6 +141,25 @@ input, textarea, select, button{font-family:inherit; color:inherit}
 }
 .chip.active{background:var(--brass); border-color:var(--brass); color:#fff}
 .chip.untagged{font-style:italic}
+/* Recherche (loupe) */
+#searchPanel{flex:0 0 auto; background:var(--chrome-bg-2); border-bottom:1px solid var(--chrome-border); max-height:0; overflow:hidden; transition:max-height .2s ease}
+#searchPanel.open{max-height:62vh; display:flex; flex-direction:column}
+.search-bar{display:flex; align-items:center; gap:10px; padding:10px 14px; flex-wrap:wrap}
+#searchInput{flex:1 1 220px; min-width:0; padding:9px 12px; border-radius:8px; border:1px solid var(--chrome-border); background:var(--chrome-bg); color:var(--chrome-text); font:inherit; font-size:15px}
+.search-bar label{display:flex; align-items:center; gap:6px; font-size:13px; white-space:nowrap}
+#searchResults{overflow-y:auto; padding:2px 8px 10px}
+.sr-group{padding:8px 8px 2px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--chrome-text-dim)}
+.sr-item{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; width:100%; text-align:left; background:transparent; border:none; border-radius:6px; padding:7px 8px; color:var(--chrome-text); font:inherit; font-size:13.5px; cursor:pointer}
+.sr-item:hover, .sr-item:focus-visible{background:var(--chrome-bg-3)}
+.sr-date{font-family:var(--mono); font-weight:700; font-size:12.5px; white-space:nowrap}
+.sr-text{flex:1 1 200px}
+.sr-tags{font-size:11px; color:var(--chrome-text-dim)}
+/* événement trouvé : surlignage temporaire */
+.event-desc.hit{background:rgba(255,214,64,.65); color:#1b1b1b; border-radius:4px; outline:2px solid #e0a800}
+text.event-date.hit{stroke:#ffd23f; stroke-width:6px; paint-order:stroke}
+.period-bar.hit{stroke-width:8}
+.arrow-period.hit rect{stroke:#e0a800; stroke-width:3; stroke-opacity:1}
+.v-item.hit .v-side > div{background:rgba(255,214,64,.5); border-radius:6px; outline:2px solid #e0a800}
 #editorWrap{position:relative; flex:1 1 auto; min-height:0}
 #editor{
   width:100%; height:100%; resize:none; border:none; background:var(--chrome-bg);
@@ -173,7 +192,7 @@ input, textarea, select, button{font-family:inherit; color:inherit}
 }
 
 /* fullscreen */
-#app.fullscreen #topbar, #app.fullscreen #panel, #app.fullscreen #editorPane, #app.fullscreen #catFilterBar, #app.fullscreen #mobileTabs{display:none !important}
+#app.fullscreen #topbar, #app.fullscreen #panel, #app.fullscreen #searchPanel, #app.fullscreen #editorPane, #app.fullscreen #catFilterBar, #app.fullscreen #mobileTabs{display:none !important}
 #app.fullscreen #main{height:100%}
 #app.fullscreen #viewPane{flex:1 1 100%}
 #fsExitBtn{display:none; position:fixed; top:10px; right:10px; z-index:50; background:rgba(27,36,48,.85); color:#fff; border:none}
@@ -238,7 +257,7 @@ svg.frise{display:block}
 
 /* ---------- IMPRESSION (item 15 : le logiciel n'intervient pas) ---------- */
 @media print{
-  #topbar, #panel, #editorPane, #catFilterBar, #mobileTabs, #fsExitBtn, #editorFoot{display:none !important}
+  #topbar, #panel, #searchPanel, #editorPane, #catFilterBar, #mobileTabs, #fsExitBtn, #editorFoot{display:none !important}
   html, body{overflow:visible !important; background:#fff}
   #app, #main, #viewPane, #timelineContainer{display:block !important; height:auto !important; overflow:visible !important; background:#fff !important}
 }
@@ -262,6 +281,7 @@ svg.frise{display:block}
     <input id="timelineTitle" type="text" value="Nouvelle frise" aria-label="Nom de la frise">
     <div class="spacer"></div>
     <div class="topbar-right">
+      <button class="btn icon" id="btnSearch" title="Rechercher (mot-clef ou date) — Ctrl+K">🔍</button>
       <button class="btn icon" id="btnOrientation" title="Basculer horizontal / vertical">↔</button>
       <button class="btn icon" id="btnDarkMode" title="Mode nuit">☾</button>
       <button class="btn icon" id="btnFullscreen" title="Plein écran">⛶</button>
@@ -325,6 +345,14 @@ svg.frise{display:block}
     </div>
   </div>
 
+  <div id="searchPanel">
+    <div class="search-bar">
+      <input type="search" id="searchInput" placeholder="Mot-clef ou date : Socrate, 399, IVe siècle…" autocomplete="off" enterkeyhint="search">
+      <label><input type="checkbox" id="searchAll"> Toutes les frises</label>
+      <button class="btn icon" id="searchClose" title="Fermer la recherche">✕</button>
+    </div>
+    <div id="searchResults"></div>
+  </div>
   <main id="main">
     <section id="editorPane">
       <div id="catFilterBar"></div>
