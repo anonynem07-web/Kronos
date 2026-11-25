@@ -1,6 +1,4 @@
-
-Sw · JS
-const CACHE = 'kronos-v3';
+const CACHE = 'kronos-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -43,5 +41,3 @@ self.addEventListener('fetch', (e) => {
     })
   );
 });
- 
-Claude a terminé sa réponse.
