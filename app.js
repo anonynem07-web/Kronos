@@ -773,10 +773,49 @@ const Store = (() => {
     }
     return '#' + hslToRgb(hue, sat, (lo + hi) / 2).map(v => v.toString(16).padStart(2, '0')).join('');
   }
-  // 12 couleurs bien distinctes [teinte, saturation], ordonnées pour que les premiers tags
-  // soient les plus différents entre eux : bleu, terre cuite, vert, violet, ocre, sarcelle,
-  // rose, olive, indigo, brun, magenta, azur. Contraste mesuré ≥ 3,5:1 (jour et nuit).
-  const PALETTE = [[214, .46], [10, .52], [132, .36], [278, .40], [44, .62], [178, .52], [335, .44], [78, .50], [243, .42], [24, .34], [304, .38], [196, .60]].map(([h, s]) => softColor(h, s));
+  // Palette par défaut : 20 couleurs franches (contraste ≥ 4,5:1 sur le papier clair).
+  // Ordre : on pioche tour à tour dans les 5 familles (chauds, roses/prunes, bleus, verts,
+  // neutres) pour que les premiers tags soient toujours bien différents entre eux.
+  const PALETTE = [
+    '#C94A2B', // corail vif
+    '#B33B5E', // rose framboise
+    '#28599E', // bleu cobalt
+    '#1E6B52', // vert émeraude
+    '#8C533B', // terracotta neutre
+    '#9E5A14', // ocre doré
+    '#9E4752', // vieux rose soutenu
+    '#1A6870', // turquoise profond
+    '#526E1E', // vert pomme / anis foncé
+    '#495E6E', // gris-bleu ardoisé
+    '#A84325', // rouille cuivrée
+    '#7A3878', // violet prune
+    '#48498C', // indigo / pervenche foncé
+    '#2B633B', // vert sapin
+    '#7D5B5E', // taupe rosé
+    '#8F5E0E', // miel soutenu
+    '#8C3F68', // mauve pourpré
+    '#1F5E78', // bleu pétrole
+    '#696617', // olive citronnée
+    '#546355', // gris-vert lichen
+  ];
+
+  // Couleur à l'AFFICHAGE : en mode nuit, ces teintes foncées sont éclaircies (mélangées au
+  // blanc) juste assez pour rester lisibles sur le fond sombre (contraste ≥ 4,5:1).
+  // La couleur enregistrée dans la frise, elle, ne change jamais.
+  const _dispCache = {};
+  function displayColor(hex) {
+    if (!hex || hex[0] !== '#' || hex.length !== 7) return hex;
+    if (document.documentElement.getAttribute('data-theme') !== 'dark') return hex;
+    if (_dispCache[hex]) return _dispCache[hex];
+    const bg = relLuminance([0x20, 0x24, 0x2b]);
+    const rgb = [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16));
+    let out = rgb;
+    for (let t = 0; t <= 1.001; t += 0.04) {
+      out = rgb.map(v => Math.round(v + (255 - v) * t));
+      if ((relLuminance(out) + 0.05) / (bg + 0.05) >= 4.5) break;
+    }
+    return (_dispCache[hex] = '#' + out.map(v => v.toString(16).padStart(2, '0')).join(''));
+  }
 
   function uid() { return 'id' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
 
@@ -858,7 +897,7 @@ const Store = (() => {
   return {
     get state() { return state; }, set state(v) { state = v; },
     load, save, uid, newTimeline, newFolder, defaultSettings,
-    allTimelines, findTimeline, findTimelineFolder, currentTimeline, colorForCategory, resetCategoryColors, PALETTE,
+    allTimelines, findTimeline, findTimelineFolder, currentTimeline, colorForCategory, resetCategoryColors, displayColor, PALETTE,
   };
 })();
 
@@ -878,13 +917,14 @@ const EventsBuilder = (() => {
     const lines = timeline.text.split('\n');
     const events = [];
     let warnings = 0;
-    for (const raw of lines) {
+    for (let li = 0; li < lines.length; li++) {
+      const raw = lines[li];
       if (!raw.trim()) continue;
       const ev = LineParser.parseEventLine(raw);
       if (!ev) continue;
       if (ev.unparsed) { warnings++; continue; }
       const parts = timeline.settings.splitSubEvents ? LineParser.splitSubEvents(ev) : [ev];
-      for (const p of parts) events.push(p);
+      parts.forEach((p, k) => { p.uid = li + '.' + k; events.push(p); });
     }
     if (timeline.settings.allBC) { for (const ev of events) applyAllBC(ev.date); }
     // attribue les couleurs de catégorie (et les enregistre dans la frise) :
@@ -900,7 +940,9 @@ const EventsBuilder = (() => {
     events.sort((a, b) => a.date.value - b.date.value);
     // catégories réellement présentes dans le texte actuel (pas de mémoire
     // fantôme des catégories supprimées — item 5)
-    const presentCategories = [...new Set(events.flatMap(e => (e.categories && e.categories.length ? e.categories : (e.category ? [e.category] : []))))];
+    // classés par ordre alphabétique (sans tenir compte de la casse ni des accents)
+    const presentCategories = [...new Set(events.flatMap(e => (e.categories && e.categories.length ? e.categories : (e.category ? [e.category] : []))))]
+      .sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
     const hasUntagged = events.some(e => !catsOf(e).length);
     return { events, warnings, total: lines.filter(l => l.trim()).length, presentCategories, hasUntagged };
   }
@@ -917,10 +959,10 @@ const EventsBuilder = (() => {
         (last.date.endValue || null) === (ev.date.endValue || null) && last.date.kind === ev.date.kind;
       const subItems = (Array.isArray(ev.description) ? ev.description : [ev.description]).map(t => ({ text: t, color: ev.color }));
       if (sameDate) {
-        last.items.push(...subItems);
+        last.items.push(...subItems); last.ids.push(ev.uid);
         if (last.annotation !== ev.annotation) last.annotation = ''; // annotations divergentes -> on n'affiche rien
       } else {
-        out.push({ date: ev.date, annotation: ev.annotation, items: subItems, color: ev.color, category: ev.category });
+        out.push({ date: ev.date, annotation: ev.annotation, items: subItems, color: ev.color, category: ev.category, ids: [ev.uid] });
       }
     }
     return out;
@@ -1233,7 +1275,7 @@ const RenderHorizontal = (() => {
       const dl = Fmt.displayDate(ev.date, S);
       const fill = ev.color || 'var(--paper-line)';
       const op = ev.color ? 0.42 : (idx % 2 ? 0.35 : 0.6);
-      axisSvg += `<g class="arrow-period"><title>${esc(plain)} (${esc(dl)})</title>`;
+      axisSvg += `<g class="arrow-period" data-evs="${esc(ev.uid)}"><title>${esc(plain)} (${esc(dl)})</title>`;
       axisSvg += `<rect x="${sg.a}" y="${rowTop}" width="${w}" height="${ARROW_ROW_H - 2}" rx="3" fill="${fill}" fill-opacity="${op}" stroke="var(--text-ink)" stroke-opacity="0.6" stroke-width="1"/>`;
       if (w >= 34) {
         axisSvg += `<foreignObject x="${sg.a + 3}" y="${rowTop + 1}" width="${w - 6}" height="${ARROW_ROW_H - 4}"><div xmlns="http://www.w3.org/1999/xhtml" class="arrow-seg"><div class="arrow-name">${html}</div><div class="arrow-dates">${esc(dl)}</div></div></foreignObject>`;
@@ -1254,7 +1296,7 @@ const RenderHorizontal = (() => {
       if (it.isPeriod) {
         const bx0 = x(Math.min(d.value, d.endValue)), bx1 = x(Math.max(d.value, d.endValue));
         const by = it.barY;
-        evSvg += `<line class="period-bar" x1="${bx0}" y1="${by}" x2="${bx1}" y2="${by}" stroke="${color}"/>`;
+        evSvg += `<line class="period-bar" data-evs="${esc(c.ids.join(' '))}" x1="${bx0}" y1="${by}" x2="${bx1}" y2="${by}" stroke="${color}"/>`;
         evSvg += `<line x1="${bx0}" y1="${by - 5}" x2="${bx0}" y2="${by + 5}" stroke="${color}" stroke-width="2"/>`;
         evSvg += `<line x1="${bx1}" y1="${by - 5}" x2="${bx1}" y2="${by + 5}" stroke="${color}" stroke-width="2"/>`;
       } else {
@@ -1269,12 +1311,12 @@ const RenderHorizontal = (() => {
       }
 
       let fy = textTop + 12;
-      evSvg += `<text class="event-date" data-ci="${it.i}" x="${textX}" y="${fy}" text-anchor="middle" fill="${color}">${esc(it.dateLabel)}</text>`;
+      evSvg += `<text class="event-date" data-ci="${it.i}" data-evs="${esc(c.ids.join(' '))}" x="${textX}" y="${fy}" text-anchor="middle" fill="${color}">${esc(it.dateLabel)}</text>`;
       fy += 13;
       if (c.annotation) { evSvg += `<text class="event-annotation" data-ci="${it.i}" x="${textX}" y="${fy}" text-anchor="middle">${esc(c.annotation)}</text>`; fy += 13; }
       const descH = it.m && it.m.descH > 0 ? it.m.descH + 2 : Math.max(14, it.textH - (fy - 10 - textTop) + 2);
       evSvg += `<foreignObject x="${boxLeft}" y="${fy - 10}" width="${it.boxWidth}" height="${descH}">`;
-      evSvg += `<div xmlns="http://www.w3.org/1999/xhtml" class="event-desc" data-ci="${it.i}">`;
+      evSvg += `<div xmlns="http://www.w3.org/1999/xhtml" class="event-desc" data-ci="${it.i}" data-evs="${esc(c.ids.join(' '))}">`;
       if (c.items.length > 1) {
         evSvg += c.items.map((sub, idx) => `<div style="${idx > 0 ? `border-top:2px solid ${sub.color || 'var(--paper-line)'};margin-top:3px;padding-top:3px` : ''}">${Fmt.markupToHtml(sub.text)}</div>`).join('');
       } else {
@@ -1340,6 +1382,7 @@ const RenderVertical = (() => {
       const isPeriod = d.kind === 'period';
       const row = document.createElement('div');
       row.className = 'v-item ' + (isPeriod ? 'period' : 'point');
+      row.setAttribute('data-evs', c.ids.join(' '));
 
       const sideDates = document.createElement('div');
       sideDates.className = 'v-side dates';
@@ -1386,6 +1429,60 @@ const RenderVertical = (() => {
 })();
 
 /* ---------------------------------------------------------------------------
+   RECHERCHE — mot-clef et/ou date, dans une frise ou dans toutes
+   ------------------------------------------------------------------------- */
+const SearchEngine = (() => {
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const plainDesc = (ev) => (Array.isArray(ev.description) ? ev.description : [ev.description]).map(d => LineParser.stripMarkers(String(d || ''))).join(' · ');
+
+  // Intervalle de temps couvert par une date (en années)
+  function spanOfDate(d) {
+    if (d.kind === 'period') return [Math.min(d.value, d.endValue), Math.max(d.value, d.endValue)];
+    if (d.toks) { const v = d.toks.map(t => t.value); return [Math.min(...v), Math.max(...v)]; }
+    if (d.kind === 'century') { const b = DateEngine.centuryBounds(d.century, !!d.isBC); return [b.start, b.end]; }
+    if (d.kind === 'decade') return d.value < 0 ? [d.value - 9, d.value] : [d.value, d.value + 9];
+    if (d.kind === 'point') {
+      if (d.day && d.month) return [d.value, d.value + 1 / 365];
+      if (d.month) return [d.value, d.value + 1 / 12];
+      return [d.value, d.value + 0.9999];
+    }
+    return [d.value, d.value];
+  }
+  // Date saisie dans la recherche ; null si la requête n'est pas une date
+  function querySpan(q, settings) {
+    const d = DateEngine.parseDateExpression(q);
+    if (!d) return null;
+    if (settings && settings.allBC) DateEngine.applyEra(d, 'BC'); // même convention que la frise
+    return spanOfDate(d);
+  }
+
+  function searchTimeline(t, q) {
+    const view = Object.assign({}, t, { categoryColors: Object.assign({}, t.categoryColors) }); // pas d'effet de bord
+    const built = EventsBuilder.buildAll(view);
+    const words = norm(q).split(/\s+/).filter(Boolean);
+    const qs = querySpan(q.trim(), t.settings);
+    const out = [];
+    for (const ev of built.events) {
+      const label = Fmt.displayDate(ev.date, t.settings);
+      const text = plainDesc(ev);
+      const hay = norm([text, ev.annotation, label, EventsBuilder.catsOf(ev).join(' ')].join(' '));
+      let hit = words.length > 0 && words.every(w => hay.includes(w));
+      if (!hit && qs) { const [a, b] = spanOfDate(ev.date); hit = a <= qs[1] && b >= qs[0]; }
+      if (hit) out.push({ t, ev, label, text, tags: EventsBuilder.catsOf(ev) });
+    }
+    return out; // déjà triés chronologiquement par buildAll
+  }
+
+  function search(timelines, q) {
+    if (!q.trim()) return [];
+    const res = [];
+    for (const t of timelines) res.push(...searchTimeline(t, q));
+    return res;
+  }
+  return { search, norm };
+})();
+
+/* ---------------------------------------------------------------------------
    8. IMPRESSION — pagination A4 (horizontale) / page unique (verticale)
    ------------------------------------------------------------------------- */
 /* ---------------------------------------------------------------------------
@@ -1428,7 +1525,7 @@ const App = (() => {
      'catColorList','catEmptyHint','btnExportOne','btnExportAll','btnImport','fileImport',
      'btnDupTimeline','btnDeleteTimeline','catFilterBar','editor','editorFoot','lineCount',
      'parseWarnings','viewPane','timelineContainer','mobileTabs','tabEdit','tabView',
-     'fsExitBtn','toast','app','inpScale','inpGrad','selArrow','chkArrowUntagged','rowArrowUntagged','btnResetColors'
+     'fsExitBtn','toast','app','inpScale','inpGrad','selArrow','chkArrowUntagged','rowArrowUntagged','btnResetColors','btnSearch','searchPanel','searchInput','searchAll','searchResults','searchClose'
     ].forEach(id => els[id] = document.getElementById(id));
   }
 
@@ -1645,6 +1742,7 @@ const App = (() => {
   }
   function toggleDarkMode() {
     applyDarkMode(document.documentElement.getAttribute('data-theme') !== 'dark');
+    scheduleRender(0); // les couleurs d'affichage dépendent du thème
   }
 
   /* ---------- Rendu principal (debounced) ---------- */
@@ -1682,6 +1780,9 @@ const App = (() => {
         if (other) e.color = Store.colorForCategory(t, other);
       }
     }
+    // couleurs d'AFFICHAGE (éclaircies en mode nuit pour rester lisibles)
+    for (const e of events) if (e.color) e.color = Store.displayColor(e.color);
+    const tView = Object.assign({}, t, { categoryColors: Object.fromEntries(Object.entries(t.categoryColors).map(([k, v]) => [k, Store.displayColor(v)])) });
     const filteredBuilt = { events, warnings: built.warnings, total: built.total };
 
     els.lineCount.textContent = `${built.total} ligne${built.total > 1 ? 's' : ''}`;
@@ -1696,14 +1797,15 @@ const App = (() => {
 
     if (t.settings.orientation === 'vertical') {
       els.timelineContainer.className = 'vertical';
-      RenderVertical.render(els.timelineContainer, t, filteredBuilt);
+      RenderVertical.render(els.timelineContainer, tView, filteredBuilt);
     } else {
       els.timelineContainer.className = 'horizontal';
-      RenderHorizontal.render(els.timelineContainer, t, filteredBuilt, t.settings, built.presentCategories);
+      RenderHorizontal.render(els.timelineContainer, tView, filteredBuilt, t.settings, built.presentCategories);
       // les champs numériques montrent la valeur effectivement utilisée tant qu'ils sont vides
       const info = RenderHorizontal.info || {};
       els.inpGrad.placeholder = info.step ? String(info.step) : 'auto';
     }
+    applyHit();
   }
 
   /* ---------- Catégories : filtre (multi-sélection, item 2) + couleurs ---------- */
@@ -1726,7 +1828,7 @@ const App = (() => {
       const active = catFilter.has(c);
       chip.className = 'chip' + (active ? ' active' : '');
       chip.textContent = '#' + c;
-      chip.style.borderColor = t.categoryColors[c] || '';
+      chip.style.borderColor = Store.displayColor(t.categoryColors[c]) || '';
       if (active) chip.style.background = t.categoryColors[c] || '';
       chip.addEventListener('click', () => {
         if (catFilter.has(c)) catFilter.delete(c); else catFilter.add(c);
@@ -1809,8 +1911,80 @@ const App = (() => {
     if (tab === 'view') scheduleRender(0);
   }
 
+  /* ---------- Recherche (loupe) ---------- */
+  let pendingHit = null;
+  let searchTimer = null;
+
+  function openSearch() {
+    els.searchPanel.classList.add('open');
+    els.btnSearch.classList.add('active');
+    closePanel();
+    setTimeout(() => { els.searchInput.focus(); els.searchInput.select(); }, 60);
+    runSearch();
+  }
+  function closeSearch() {
+    els.searchPanel.classList.remove('open');
+    els.btnSearch.classList.remove('active');
+  }
+  function toggleSearch() { els.searchPanel.classList.contains('open') ? closeSearch() : openSearch(); }
+
+  function runSearch() {
+    const q = els.searchInput.value;
+    const box = els.searchResults;
+    box.innerHTML = '';
+    if (!q.trim()) { box.innerHTML = '<div class="mini" style="padding:10px 14px">Tapez un mot-clef (« Socrate »), une date (« 399 », « IVe siècle », « 1789 ») ou les deux.</div>'; return; }
+    const scope = els.searchAll.checked ? Store.allTimelines() : [Store.currentTimeline()];
+    const res = SearchEngine.search(scope, q);
+    const MAX = 200;
+    const head = document.createElement('div');
+    head.className = 'mini'; head.style.padding = '8px 14px 2px';
+    head.textContent = res.length ? `${res.length} résultat${res.length > 1 ? 's' : ''}${res.length > MAX ? ` (les ${MAX} premiers affichés)` : ''}` : 'Aucun résultat';
+    box.appendChild(head);
+    let lastT = null;
+    for (const r of res.slice(0, MAX)) {
+      if (els.searchAll.checked && r.t !== lastT) {
+        const h = document.createElement('div'); h.className = 'sr-group'; h.textContent = r.t.name; box.appendChild(h); lastT = r.t;
+      }
+      const b = document.createElement('button');
+      b.className = 'sr-item';
+      const color = r.ev.color ? Store.displayColor(r.ev.color) : '';
+      const d = document.createElement('span'); d.className = 'sr-date'; d.textContent = r.label; if (color) d.style.color = color;
+      const tx = document.createElement('span'); tx.className = 'sr-text'; tx.textContent = r.text;
+      b.appendChild(d); b.appendChild(tx);
+      if (r.tags.length) { const tg = document.createElement('span'); tg.className = 'sr-tags'; tg.textContent = r.tags.map(x => '#' + x).join(' '); b.appendChild(tg); }
+      b.addEventListener('click', () => goToResult(r));
+      box.appendChild(b);
+    }
+  }
+
+  function goToResult(r) {
+    pendingHit = r.ev.uid;
+    if (r.t.id !== Store.currentTimeline().id) {
+      Store.state.currentTimelineId = r.t.id; Store.save();
+      catFilter.clear();
+      loadTimelineIntoUI(r.t); renderFolderList();
+    } else if (catFilter.size) {
+      catFilter.clear(); onCategoryFilterChanged();
+    }
+    closeSearch();
+    setMobileTab('view');
+    scheduleRender(0);
+  }
+
+  // surligne (et amène à l'écran) l'événement choisi dans la recherche
+  function applyHit() {
+    if (!pendingHit) return;
+    const id = pendingHit; pendingHit = null;
+    const nodes = [...els.timelineContainer.querySelectorAll('[data-evs]')].filter(n => n.getAttribute('data-evs').split(' ').includes(id));
+    if (!nodes.length) { toast('Cet événement n’est pas affiché'); return; }
+    nodes.forEach(n => n.classList.add('hit'));
+    const target = nodes.find(n => n.classList.contains('event-desc')) || nodes[0];
+    try { target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }); } catch (e) {}
+    setTimeout(() => nodes.forEach(n => n.classList.remove('hit')), 6000);
+  }
+
   /* ---------- Panneau ✦ Frises ---------- */
-  function togglePanel() { els.panel.classList.toggle('open'); }
+  function togglePanel() { els.panel.classList.toggle('open'); if (els.panel.classList.contains('open')) closeSearch(); }
   function closePanel() { els.panel.classList.remove('open'); }
 
   // item 2 : quand le filtre par #catégorie change, l'éditeur n'affiche (et ne
@@ -2037,6 +2211,17 @@ const App = (() => {
       else return;
       els.selGrad.value = st.gradStep;
       Store.save(); scheduleRender(250);
+    });
+    els.btnSearch.addEventListener('click', toggleSearch);
+    els.searchClose.addEventListener('click', closeSearch);
+    els.searchInput.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 120); });
+    els.searchAll.addEventListener('change', runSearch);
+    els.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { const first = els.searchResults.querySelector('.sr-item'); if (first) first.click(); }
+    });
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); }
+      if (e.key === 'Escape' && els.searchPanel.classList.contains('open')) closeSearch();
     });
     els.selArrow.addEventListener('change', () => {
       currentTimeline().settings.arrowPeriods = els.selArrow.value;
